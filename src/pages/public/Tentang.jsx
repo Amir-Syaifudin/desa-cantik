@@ -81,24 +81,6 @@ const Tentang = () => {
             </div>
           </div>
 
-          {/* Stats Section */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-20">
-            {[
-              { icon: Users, label: 'Desa Binaan', value: '150+' },
-              { icon: Target, label: 'Program Aktif', value: '45+' },
-              { icon: TrendingUp, label: 'Peningkatan Data', value: '85%' },
-              { icon: Shield, label: 'Kualitas Data', value: 'A+' },
-            ].map((stat, index) => (
-              <Card key={index} className="text-center p-6 border-0 shadow-lg hover:shadow-xl transition-shadow bg-gradient-to-br from-white to-gray-50">
-                <CardContent className="p-0">
-                  <stat.icon className="h-12 w-12 text-[#33A1E0] mx-auto mb-3" />
-                  <p className="text-3xl text-[#154D71] mb-2">{stat.value}</p>
-                  <p className="text-sm text-gray-600">{stat.label}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
           {/* Tujuan & Manfaat Section */}
           <section className="grid md:grid-cols-2 gap-8 mb-20">
             <Card className="border-0 shadow-xl overflow-hidden">
