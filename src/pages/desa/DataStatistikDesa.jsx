@@ -1,5 +1,5 @@
 // src/pages/admin/DataStatistikDesa.jsx
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -42,37 +42,11 @@ import {
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { dataApi } from '@/services/dataApi';
 
 // --- Data Dummy ---
-const dummyStatistics = [
-  {
-    id: 1,
-    title: 'Data Penduduk Lembang Nonongan Selatan 2024',
-    subject: 'Demografi',
-    updatedDate: new Date('2025-11-15'),
-    status: 'Terverifikasi',
-    fileName: 'data-penduduk-2024.csv',
-    fileUrl: '#',
-  },
-  {
-    id: 2,
-    title: 'Data UMKM Lembang Nonongan Selatan 2024',
-    subject: 'Ekonomi',
-    updatedDate: new Date('2025-11-10'),
-    status: 'Menunggu Validasi',
-    fileName: 'data-umkm-2024.csv',
-    fileUrl: '#',
-  },
-  {
-    id: 3,
-    title: 'Data Fasilitas Pendidikan 2024',
-    subject: 'Pendidikan',
-    updatedDate: new Date('2025-11-05'),
-    status: 'Ditolak',
-    fileName: 'data-fasilitas-pendidikan-2024.csv',
-    fileUrl: '#',
-  },
-];
+const dummyStatistics = []; // Cleared dummy data
 
 const subjectOptions = ['Demografi', 'Ekonomi', 'Pendidikan', 'Kesehatan', 'Pemerintahan'];
 const statusOptions = ['Terverifikasi', 'Menunggu Validasi', 'Ditolak'];
@@ -88,7 +62,10 @@ const defaultFormState = {
 };
 
 export default function DataStatistikDesa() {
-  const [statistics, setStatistics] = useState(dummyStatistics);
+  const { user } = useAuth();
+  const [statistics, setStatistics] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statisticTypes, setStatisticTypes] = useState([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formState, setFormState] = useState(defaultFormState);
   const [editingId, setEditingId] = useState(null); 
@@ -96,6 +73,34 @@ export default function DataStatistikDesa() {
   // --- State Filter (BARU) ---
   const [filterSubject, setFilterSubject] = useState('all');
   const [filterYear, setFilterYear] = useState('all');
+
+  useEffect(() => {
+    if (user?.village_id) {
+      loadData();
+    }
+  }, [user?.village_id]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [statsData, typesData] = await Promise.all([
+        dataApi.listStatistics(user.village_id, { per_page: 100 }),
+        dataApi.listStatisticTypes()
+      ]);
+      
+      const formattedStats = statsData.items.map(item => ({
+        ...item,
+        updatedDate: item.updatedDate ? new Date(item.updatedDate) : new Date(),
+      }));
+
+      setStatistics(formattedStats);
+      setStatisticTypes(typesData);
+    } catch (error) {
+      console.error("Failed to load data", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Helper warna badge status
   const getStatusVariant = (status) => {
@@ -174,41 +179,46 @@ export default function DataStatistikDesa() {
   };
 
   // --- CRUD Actions ---
-  const handleSubmit = () => {
-    if (editingId) {
-      // EDIT
-      setStatistics(prev => prev.map(stat => 
-        stat.id === editingId 
-          ? { 
-              ...stat, 
-              ...formState, 
-              fileName: formState.file ? formState.fileName : stat.fileName,
-              fileUrl: formState.file ? formState.fileUrl : stat.fileUrl,
-              file: undefined // Bersihkan object File
-            } 
-          : stat
-      ));
-    } else {
-      // TAMBAH
-      const newStatistic = {
-        ...formState,
-        id: Date.now(), 
-        file: undefined
-      };
-      setStatistics([newStatistic, ...statistics]);
+  const handleSubmit = async () => {
+    try {
+      const formData = new FormData();
+      formData.append('indicator_name', formState.title);
+      
+      // Find type ID
+      const typeId = statisticTypes.find(t => t.category === formState.subject || t.name === formState.subject)?.id || 1;
+      formData.append('statistic_type_id', typeId);
+      
+      formData.append('value', 0);
+      formData.append('year', formState.updatedDate.getFullYear());
+      formData.append('status', formState.status);
+      
+      if (formState.file) {
+        formData.append('file', formState.file);
+      }
+
+      if (editingId) {
+        await dataApi.updateStatistic(user.village_id, editingId, formData);
+      } else {
+        await dataApi.createStatistic(user.village_id, formData);
+      }
+      
+      loadData();
+      setIsDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to save", error);
+      alert("Gagal menyimpan data");
     }
-    setIsDialogOpen(false);
-    setFormState(defaultFormState);
-    setEditingId(null);
   };
 
-  const handleDelete = (id) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus data statistik ini?')) {
-      const statToDelete = statistics.find(p => p.id === id);
-      if (statToDelete?.fileUrl?.startsWith('blob:')) {
-        URL.revokeObjectURL(statToDelete.fileUrl);
+  const handleDelete = async (id) => {
+    if (window.confirm('Apakah Anda yakin ingin menghapus data ini?')) {
+      try {
+        await dataApi.deleteStatistic(user.village_id, id);
+        loadData();
+      } catch (error) {
+        console.error("Failed to delete", error);
+        alert("Gagal menghapus data");
       }
-      setStatistics(statistics.filter((stat) => stat.id !== id));
     }
   };
 

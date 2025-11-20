@@ -10,7 +10,7 @@ export const dataApi = {
   },
 
   async createVillage(payload) {
-    const response = await apiClient.post('/villages', payload);
+    const response = await apiClient.post("/villages", payload);
     return response?.data;
   },
 
@@ -66,6 +66,16 @@ export const dataApi = {
     return response?.data;
   },
 
+  async replacePublicationFile(villageId, publicationId, file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await apiClient.post(
+      `/villages/${villageId}/publications/${publicationId}/replace-file`,
+      formData
+    );
+    return response?.data;
+  },
+
   async deletePublication(villageId, publicationId) {
     return apiClient.delete(
       `/villages/${villageId}/publications/${publicationId}`
@@ -83,6 +93,8 @@ export const dataApi = {
   },
 
   async createStatistic(villageId, payload) {
+    // Check if payload is FormData, if not convert it or leave as is?
+    // If it contains file, it should be FormData.
     const response = await apiClient.post(
       `/villages/${villageId}/statistics`,
       payload
@@ -91,10 +103,17 @@ export const dataApi = {
   },
 
   async updateStatistic(villageId, statisticId, payload) {
-    const response = await apiClient.put(
-      `/villages/${villageId}/statistics/${statisticId}`,
-      payload
-    );
+    let data = payload;
+    let method = "put";
+    let url = `/villages/${villageId}/statistics/${statisticId}`;
+
+    if (payload instanceof FormData) {
+      method = "post";
+      payload.append("_method", "PUT");
+      data = payload;
+    }
+
+    const response = await apiClient.request(method, url, { data });
     return response?.data;
   },
 

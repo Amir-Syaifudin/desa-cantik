@@ -1,5 +1,5 @@
 // src/pages/desa/PetaTematikDesa.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -65,30 +65,8 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-
-// --- MOCK DATA (Simulasi Backend) ---
-const MOCK_GEOSPATIAL = [
-  { 
-    id: 1, 
-    name: 'Batas Wilayah Desa A', 
-    type: 'boundary', 
-    geometry: null, 
-    source: 'data_desa_a.geojson' // Fallback mock
-  },
-  { 
-    id: 2, 
-    name: 'Titik Lokasi Sekolah', 
-    type: 'point', 
-    geometry: null,
-    source: 'data_sekolah.geojson' // Fallback mock
-  },
-];
-
-// Di Backend, data ini mungkin disimpan di 'properties' geospatial_data atau tabel terpisah
-const MOCK_LAYERS = [
-  { id: 1, name: 'Peta Kepadatan Penduduk', geoId: 1, color: '#FF0000', isVisible: true },
-  { id: 2, name: 'Peta Fasilitas Pendidikan', geoId: 2, color: '#0000FF', isVisible: true },
-];
+import { useAuth } from '@/contexts/AuthContext';
+import { dataApi } from '@/services/dataApi';
 
 // Fix icon default Leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -106,14 +84,37 @@ export default function PetaTematikDesa() {
   const pickerLayerGroupRef = useRef(null);
 
   // Data States
-  const [geospatialData, setGeospatialData] = useState(MOCK_GEOSPATIAL);
-  const [layerData, setLayerData] = useState(MOCK_LAYERS);
+  const { user } = useAuth();
+  const [geospatialData, setGeospatialData] = useState([]);
+  const [layerData, setLayerData] = useState([]);
+  const [loading, setLoading] = useState(true);
   
   // UI States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null); 
   const [currentItem, setCurrentItem] = useState(null); 
   const [showMap, setShowMap] = useState(false); // Lazy load map
+
+  const loadData = useCallback(async () => {
+    if (!user?.village_id) return;
+    setLoading(true);
+    try {
+      const [geoData, mapData] = await Promise.all([
+        dataApi.listGeospatial(user.village_id),
+        dataApi.listThematicMaps(user.village_id)
+      ]);
+      setGeospatialData(geoData);
+      setLayerData(mapData);
+    } catch (error) {
+      console.error("Failed to load map data", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.village_id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   // Form States (untuk Modal)
   const [formDataName, setFormDataName] = useState('');
@@ -154,20 +155,18 @@ export default function PetaTematikDesa() {
 
           const geoData = geospatialData.find(g => g.id === parseInt(layer.geoId));
           if (geoData) {
-            // Jika data baru (upload/gambar), geometry ada di objek. Jika data lama (mock), fetch file.
-            const fetchSource = geoData.geometry 
-              ? Promise.resolve(geoData.geometry) 
-              : fetch(`/${geoData.source}`).then(res => res.json());
-
-            return fetchSource.then(jsonData => {
+            // Real data: geoData.geojson_data
+            const jsonData = geoData.geojson_data || geoData.geometry;
+            
+            if (jsonData) {
                 const geoJsonLayer = L.geoJSON(jsonData, {
                   style: () => ({ color: layer.color, weight: 3, opacity: 1, fillOpacity: 0.3 }),
                   pointToLayer: (feature, latlng) => {
                     return L.circleMarker(latlng, { radius: 6, fillColor: layer.color, color: "#000", weight: 1, opacity: 1, fillOpacity: 0.8 });
                   }
                 });
-                return geoJsonLayer;
-              }).catch(err => null);
+                return Promise.resolve(geoJsonLayer);
+            }
           }
           return Promise.resolve(null);
         });
@@ -253,6 +252,7 @@ export default function PetaTematikDesa() {
       setUploadedGeoJson(json);
       setUploadedFileName(file.name);
     } catch (err) {
+      console.error(err);
       alert("File tidak valid. Pastikan format .geojson atau .json");
     }
   };
@@ -260,22 +260,47 @@ export default function PetaTematikDesa() {
   const handleResetPolygon = () => setPolygonPoints([]);
   const handleUndoPolygon = () => setPolygonPoints(prev => prev.slice(0, -1));
 
-  const handleDelete = (type, id) => {
+  const handleDelete = async (type, id) => {
     if (window.confirm("Hapus data ini?")) {
-      if (type === 'geo') {
-        setGeospatialData(geospatialData.filter(item => item.id !== id));
-        setLayerData(layerData.filter(l => l.geoId !== id)); // Cascade delete
-      } else if (type === 'layer') {
-        setLayerData(layerData.filter(item => item.id !== id));
+      try {
+        if (type === 'geo') {
+          await dataApi.deleteGeospatial(user.village_id, id);
+        } else if (type === 'layer') {
+          await dataApi.deleteThematicMap(user.village_id, id);
+        }
+        loadData();
+      } catch (error) {
+        console.error("Failed to delete", error);
+        alert("Gagal menghapus data");
       }
     }
   };
 
-  const handleToggleLayer = (id, checked) => {
+  const handleToggleLayer = async (id, checked) => {
+    // Optimistic update
     setLayerData(prev => prev.map(l => l.id === id ? { ...l, isVisible: checked } : l));
+    
+    try {
+        const layer = layerData.find(l => l.id === id);
+        if (!layer) return;
+
+        const payload = {
+            village_id: user.village_id,
+            name: layer.name,
+            geoId: layer.geoId,
+            color: layer.color,
+            isVisible: checked
+        };
+        
+        await dataApi.updateThematicMap(user.village_id, id, payload);
+    } catch (error) {
+        console.error("Failed to update layer visibility", error);
+        // Revert on error
+        setLayerData(prev => prev.map(l => l.id === id ? { ...l, isVisible: !checked } : l));
+    }
   };
   
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData.entries());
@@ -320,26 +345,42 @@ export default function PetaTematikDesa() {
         }
       }
       
-      // Simpan ke State (Nanti diganti POST ke API)
-      const newGeo = { 
-        id: Date.now(), 
-        name: formDataName, 
-        type: formDataType, 
-        geometry: finalGeometry, // Ini yang akan dikirim ke backend
-        source: sourceName 
+      // Simpan ke API
+      const payload = {
+        village_id: user.village_id,
+        name: formDataName,
+        type: formDataType,
+        geometry: finalGeometry,
+        description: sourceName
       };
-      setGeospatialData([...geospatialData, newGeo]);
+      
+      try {
+        await dataApi.createGeospatial(user.village_id, payload);
+        loadData();
+        setIsModalOpen(false);
+      } catch (error) {
+        console.error("Failed to create geospatial data", error);
+        alert("Gagal menyimpan data geospatial");
+      }
 
     } else if (modalType === 'addLayer') {
-      setLayerData([...layerData, { 
-        id: Date.now(), 
-        name: data.name, 
-        geoId: parseInt(data.geoId), 
-        color: data.color, 
-        isVisible: true 
-      }]);
+      const payload = {
+        village_id: user.village_id,
+        name: data.name,
+        geoId: parseInt(data.geoId),
+        color: data.color,
+        isVisible: true
+      };
+      
+      try {
+        await dataApi.createThematicMap(user.village_id, payload);
+        loadData();
+        setIsModalOpen(false);
+      } catch (error) {
+        console.error("Failed to create thematic map", error);
+        alert("Gagal menyimpan peta tematik");
+      }
     }
-    setIsModalOpen(false); 
   };
 
   // --- RENDER CONTENT ---
@@ -446,6 +487,10 @@ export default function PetaTematikDesa() {
       );
     }
   };
+
+  if (loading) {
+    return <div className="p-8 text-center">Loading...</div>;
+  }
 
   return (
     <div className="w-full space-y-6">
