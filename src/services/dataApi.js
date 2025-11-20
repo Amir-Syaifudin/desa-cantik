@@ -9,6 +9,23 @@ export const dataApi = {
     };
   },
 
+  async createVillage(payload) {
+    const response = await apiClient.post('/villages', payload);
+    return response?.data;
+  },
+
+  async updateVillage(id, payload) {
+    const response = await apiClient.put(`/villages/${id}`, payload);
+    return response?.data;
+  },
+
+  async toggleVillageStatus(id, isActive) {
+    const response = await apiClient.put(`/villages/${id}/toggle-status`, {
+      is_active: isActive,
+    });
+    return response?.data;
+  },
+
   async getVillage(id) {
     const response = await apiClient.get(`/villages/${id}`);
     return response?.data;

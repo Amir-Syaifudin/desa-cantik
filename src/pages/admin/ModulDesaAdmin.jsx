@@ -35,53 +35,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { XCircle } from 'lucide-react';
+import { dataApi } from '@/services/dataApi';
+import { apiClient } from '@/services/apiClient';
 
-const villages = [
-  'Nonongan Selatan',
-  'Rinding Batu',
-  'Konoha',
-  'Jatinegara',
-];
-
-const modules = [
-  {
-    id: 1,
-    name: 'Demografi',
-    description: 'Pendataan kondisi demografi.',
-    visibility: 'show',
-  },
-  {
-    id: 2,
-    name: 'Pendidikan',
-    description: 'Pendataan kondisi pendidikan.',
-    visibility: 'hide',
-  },
-  {
-    id: 3,
-    name: 'Ekonomi',
-    description: 'Pendataan kondisi ekonomi.',
-    visibility: 'show',
-  },
-  {
-    id: 4,
-    name: 'Kesehatan',
-    description: 'Pendataan kondisi kesehatan.',
-    visibility: 'show',
-  },
-  {
-    id: 5,
-    name: 'Pertanian',
-    description: 'Pendataan kondisi pertanian.',
-    visibility: 'show',
-  },
-];
-
-const StatusToggle = ({ value }) => (
+const StatusToggle = ({ value, onChange }) => (
   <div className="flex items-center gap-3">
     {['show', 'hide'].map((state) => (
       <button
         key={state}
         type="button"
+        onClick={() => onChange?.(state === 'show')}
         className={cn(
           'w-16 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold transition-all',
           state === value
@@ -96,7 +59,41 @@ const StatusToggle = ({ value }) => (
 );
 
 const ModulDesaAdmin = () => {
-  const [selectedVillage, setSelectedVillage] = React.useState(villages[0]);
+  const [villages, setVillages] = React.useState([]);
+  const [modules, setModules] = React.useState([]);
+  const [selectedVillage, setSelectedVillage] = React.useState('');
+
+  useEffect(() => {
+    const loadVillages = async () => {
+      try {
+        const response = await dataApi.listVillages({ per_page: 100, is_active: 'all' });
+        const items = response.items || [];
+        setVillages(items);
+        if (items.length > 0) {
+          setSelectedVillage(String(items[0].id));
+        }
+      } catch (error) {
+        console.error('Gagal memuat desa:', error);
+      }
+    };
+
+    loadVillages();
+  }, []);
+
+  useEffect(() => {
+    const loadModules = async () => {
+      if (!selectedVillage) return;
+      try {
+        const response = await apiClient.get(`/villages/${selectedVillage}/modules`);
+        setModules(response.data || []);
+      } catch (error) {
+        console.error('Gagal memuat modul desa:', error);
+        setModules([]);
+      }
+    };
+
+    loadModules();
+  }, [selectedVillage]);
 
   return (
     <div className="min-h-screen bg-slate-100 p-6">
@@ -109,8 +106,8 @@ const ModulDesaAdmin = () => {
             </SelectTrigger>
             <SelectContent>
               {villages.map((village) => (
-                <SelectItem key={village} value={village}>
-                  {village}
+                <SelectItem key={village.id} value={String(village.id)}>
+                  {village.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -163,14 +160,27 @@ const ModulDesaAdmin = () => {
                         {module.id}
                       </TableCell>
                       <TableCell className="text-base font-semibold">
-                        {module.name}
+                        {module.module_name || module.name}
                       </TableCell>
                       <TableCell>{module.description}</TableCell>
                       <TableCell className="text-center">
                         <ModuleDialog mode="edit" module={module} />
                       </TableCell>
                       <TableCell className="text-center">
-                        <StatusToggle value={module.visibility} />
+                        <StatusToggle
+                          value={module.is_enabled || module.visibility ? 'show' : 'hide'}
+                          onChange={async (isEnabled) => {
+                            try {
+                              await apiClient.put(`/villages/${selectedVillage}/modules/${module.module_name || module.name}/toggle`, {
+                                is_enabled: isEnabled,
+                              });
+                              setModules((prev) => prev.map((m) => m.id === module.id ? { ...m, is_enabled: isEnabled } : m));
+                            } catch (error) {
+                              console.error('Gagal mengganti status modul:', error);
+                              alert('Gagal mengganti status modul.');
+                            }
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}

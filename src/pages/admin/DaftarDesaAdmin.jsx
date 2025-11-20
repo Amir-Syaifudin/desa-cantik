@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Card,
@@ -36,37 +36,52 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Save, XCircle } from 'lucide-react';
+import { dataApi } from '@/services/dataApi';
 
-const villages = [
-  { id: 1, name: 'Nonongan Selatan', visibility: 'show' },
-  { id: 2, name: 'Rinding Batu', visibility: 'show' },
-  { id: 3, name: 'Konoha', visibility: 'show' },
-  { id: 4, name: 'Jatinegara', visibility: 'show' },
-];
-
-const VisibilityToggle = ({ value }) => (
-  <div className="flex items-center rounded-full border border-slate-200 bg-white p-1 shadow-sm">
-    {['show', 'hide'].map((state) => (
-      <button
-        key={state}
-        type="button"
-        className={cn(
-          'px-4 py-1 text-xs font-semibold rounded-full transition-colors',
-          state === value
-            ? 'bg-sky-200 text-slate-900 shadow-sm'
-            : 'text-slate-400'
-        )}
-      >
-        {state === 'show' ? 'Tampil' : 'Sembunyi'}
-      </button>
-    ))}
-  </div>
-);
+const VisibilityToggle = ({ value, onChange }) => {
+  return (
+    <div className="flex items-center rounded-full border border-slate-200 bg-white p-1 shadow-sm">
+      {['show', 'hide'].map((state) => (
+        <button
+          key={state}
+          type="button"
+          onClick={() => onChange?.(state === 'show')}
+          className={cn(
+            'px-4 py-1 text-xs font-semibold rounded-full transition-colors',
+            state === value
+              ? 'bg-sky-200 text-slate-900 shadow-sm'
+              : 'text-slate-400'
+          )}
+        >
+          {state === 'show' ? 'Tampil' : 'Sembunyi'}
+        </button>
+      ))}
+    </div>
+  );
+};
 
 const pageNumbers = [1, 2, 3, 'ellipsis', 8, 9, 10];
 
 const DaftarDesaAdmin = () => {
   const currentPage = 1;
+  const [villages, setVillages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadVillages = async () => {
+      try {
+        setLoading(true);
+        const response = await dataApi.listVillages({ per_page: 100, is_active: 'all' });
+        setVillages(response.items || []);
+      } catch (error) {
+        console.error('Gagal memuat daftar desa:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadVillages();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-100 py-8 px-4">
@@ -101,10 +116,17 @@ const DaftarDesaAdmin = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {villages.map((village) => (
-                  <TableRow
-                    key={village.id}
-                    className={cn(
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-gray-500">
+                      Memuat data desa...
+                    </TableCell>
+                  </TableRow>
+                ) : villages.length > 0 ? (
+                  villages.map((village) => (
+                    <TableRow
+                      key={village.id}
+                      className={cn(
                       'text-sm',
                       village.id === 1
                         ? 'bg-sky-100/80 font-semibold text-slate-900'
@@ -117,14 +139,35 @@ const DaftarDesaAdmin = () => {
                     <TableCell className="text-base font-semibold">
                       {village.name}
                     </TableCell>
-                    <TableCell className="text-center">
-                      <VisibilityToggle value={village.visibility} />
+                      <TableCell className="text-center">
+                      <VisibilityToggle
+                        value={village.is_active ? 'show' : 'hide'}
+                        onChange={async (newStatus) => {
+                          try {
+                            await dataApi.toggleVillageStatus(village.id, newStatus);
+                            setVillages((prev) =>
+                              prev.map((item) =>
+                                item.id === village.id ? { ...item, is_active: newStatus } : item
+                              )
+                            );
+                          } catch (error) {
+                            console.error('Gagal mengubah status desa:', error);
+                            alert('Gagal mengubah status desa.');
+                          }
+                        }}
+                      />
                     </TableCell>
                     <TableCell className="text-center">
                       <VillageDialog mode="edit" village={village} />
                     </TableCell>
                   </TableRow>
-                ))}
+                )) : (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-gray-500">
+                      Tidak ada data desa.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
@@ -181,6 +224,7 @@ export default DaftarDesaAdmin;
 const VillageDialog = ({ mode, village }) => {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(village?.name || '');
+  const [submitting, setSubmitting] = useState(false);
 
   React.useEffect(() => {
     if (open && village) {
@@ -192,10 +236,30 @@ const VillageDialog = ({ mode, village }) => {
 
   const title = mode === 'add' ? 'Tambah Daftar Desa' : 'Edit Daftar Desa';
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: connect with API
-    setOpen(false);
+    try {
+      setSubmitting(true);
+      const payload = {
+        name,
+        code: name.toLowerCase().replace(/\s+/g, '-').slice(0, 20),
+        district: village?.district || 'Toraja Utara',
+      };
+
+      if (mode === 'add') {
+        await dataApi.createVillage(payload);
+      } else if (village?.id) {
+        await dataApi.updateVillage(village.id, payload);
+      }
+
+      window.location.reload();
+    } catch (error) {
+      console.error('Gagal menyimpan desa:', error);
+      alert('Gagal menyimpan desa. Pastikan data sudah benar.');
+    } finally {
+      setSubmitting(false);
+      setOpen(false);
+    }
   };
 
   const trigger =
@@ -243,9 +307,10 @@ const VillageDialog = ({ mode, village }) => {
             <Button
               type="submit"
               className="flex min-w-[120px] items-center justify-center gap-2 rounded-full bg-emerald-200 text-emerald-900 hover:bg-emerald-300"
+              disabled={submitting}
             >
               <Save className="h-4 w-4" />
-              Simpan
+              {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
             <Button
               type="button"

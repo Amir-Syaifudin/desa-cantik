@@ -1,5 +1,5 @@
 // src/pages/desa/DashboardDesa.jsx
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -24,6 +24,7 @@ import {
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import { BarChartHorizontalBig, BookCopy, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { validationFlowService } from "@/services/validationFlowService";
 
 // --- Data Dummy untuk Chart ---
 const chartDataStatus = [
@@ -82,6 +83,24 @@ const recentStats = [
 // ------------------------------
 
 export default function DashboardDesa() {
+  const [flowSteps, setFlowSteps] = useState([]);
+  const [loadingFlow, setLoadingFlow] = useState(true);
+
+  useEffect(() => {
+    const loadFlow = async () => {
+      try {
+        setLoadingFlow(true);
+        const steps = await validationFlowService.getFlow();
+        setFlowSteps(steps);
+      } catch (error) {
+        console.error("Gagal memuat alur validasi:", error);
+      } finally {
+        setLoadingFlow(false);
+      }
+    };
+
+    loadFlow();
+  }, []);
   
   // Fungsi helper untuk menentukan warna Badge
   const getStatusVariant = (status) => {
@@ -283,6 +302,50 @@ export default function DashboardDesa() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      {/* --- Alur Validasi Data Statistik (API) --- */}
+      <Card className="shadow-sm border">
+        <CardHeader>
+          <CardTitle>Alur Validasi Data Statistik</CardTitle>
+          <CardDescription>
+            Tahapan validasi sesuai kebijakan BPS dan perangkat desa.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingFlow ? (
+            <div className="text-gray-500">Memuat alur validasi...</div>
+          ) : flowSteps.length === 0 ? (
+            <div className="text-gray-500">Belum ada data alur validasi.</div>
+          ) : (
+            <div className="space-y-4">
+              {flowSteps.map((step, idx) => (
+                <div
+                  key={step.id || idx}
+                  className="flex items-start gap-4 p-4 rounded-lg border bg-white"
+                >
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sky-700 font-semibold">
+                    {step.order || idx + 1}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-gray-800">{step.title}</p>
+                      <Badge variant="outline" className="text-xs">
+                        {step.role || "-"}
+                      </Badge>
+                      {step.slaDays ? (
+                        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">
+                          SLA {step.slaDays} hari
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <p className="text-sm text-gray-600">{step.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

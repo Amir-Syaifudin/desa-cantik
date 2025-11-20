@@ -39,6 +39,7 @@ import { villageService } from '../../services/villageService.js';
 import { geoService } from '../../services/geoService.js';
 import { publicationService } from '../../services/publicationService.js'; 
 import { statisticService } from '../../services/statisticService.js';
+import { documentationService } from '../../services/documentationService.js';
 
 // IMPORT SHARED COMPONENTS
 import VillageDetailNavbar from '../../components/shared/VillageDetailNavbar.jsx';
@@ -69,6 +70,7 @@ export default function VillageDetail() {
   // State Peta
   const [mapData, setMapData] = useState([]); 
   const [localLayerVisibility, setLocalLayerVisibility] = useState({});
+  const [documentation, setDocumentation] = useState([]);
 
   // State Publikasi
   const [publications, setPublications] = useState([]);
@@ -151,17 +153,17 @@ export default function VillageDetail() {
         try {
              const data = await publicationService.getPublications(id);
              const list = Array.isArray(data) ? data : (data.data || []);
-             
+
              const formatted = list.map(item => ({
                  id: item.id,
                  title: item.title,
                  subject: item.category || 'Umum',
-                 date: new Date(item.created_at).toLocaleDateString('id-ID'),
-                 year: new Date(item.created_at).getFullYear().toString(),
-                 month: (new Date(item.created_at).getMonth() + 1).toString(),
+                 date: new Date(item.created_at || item.createdAt || item.publishedAt).toLocaleDateString('id-ID'),
+                 year: new Date(item.created_at || item.createdAt || item.publishedAt).getFullYear().toString(),
+                 month: (new Date(item.created_at || item.createdAt || item.publishedAt).getMonth() + 1).toString(),
                  description: item.description,
-                 imageUrl: item.cover_url || 'https://placehold.co/300x400/BFDBFE/1E3A8A?text=PDF',
-                 fileUrl: item.file_url
+                 imageUrl: item.imageUrl || item.cover_url || 'https://placehold.co/300x400/BFDBFE/1E3A8A?text=PDF',
+                 fileUrl: item.fileUrl || item.downloadUrl || item.file_url
              }));
              setPublications(formatted);
         } catch (err) {
@@ -258,6 +260,22 @@ export default function VillageDetail() {
     loadStats();
   }, [id]);
 
+  // 5. Load Dokumentasi/Galeri
+  useEffect(() => {
+    const loadDocs = async () => {
+      if (!id) return;
+      try {
+        const data = await documentationService.getVillageDocumentation(id);
+        const list = Array.isArray(data) ? data : (data.data || []);
+        setDocumentation(list);
+      } catch (err) {
+        console.error('Gagal memuat dokumentasi:', err);
+      }
+    };
+
+    loadDocs();
+  }, [id]);
+
   // 5. Scroll Spy
   useEffect(() => {
     const handleScroll = () => {
@@ -333,15 +351,13 @@ export default function VillageDetail() {
   if (loading) return <div className="h-screen flex items-center justify-center text-[#154D71]">Memuat data desa...</div>;
   if (!village) return <div className="h-screen flex items-center justify-center text-red-500">Data desa tidak ditemukan.</div>;
 
-  // Generate Dokumentasi dari Gambar Desa + Cover Publikasi
-  const documentationImages = [
-    village.image_url || village.logo_url,
-    ...publications.map(p => p.imageUrl).filter(url => !url.includes('placehold'))
-  ].filter(Boolean);
+  // Dokumentasi dari endpoint backend
+  const documentationImages = documentation.length > 0
+    ? documentation.map((item) => item.url || item.imageUrl).filter(Boolean)
+    : [village.image_url || village.logo_url].filter(Boolean);
 
-  // Jika kosong, pakai placeholder agar marquee tetap jalan
   if (documentationImages.length === 0) {
-      documentationImages.push('https://placehold.co/800x600/e2e8f0/94a3b8?text=Belum+Ada+Dokumentasi');
+    documentationImages.push('https://placehold.co/800x600/e2e8f0/94a3b8?text=Belum+Ada+Dokumentasi');
   }
 
   return (
