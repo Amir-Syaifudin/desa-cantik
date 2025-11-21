@@ -60,28 +60,44 @@ const VisibilityToggle = ({ value, onChange }) => {
   );
 };
 
-const pageNumbers = [1, 2, 3, 'ellipsis', 8, 9, 10];
-
 const DaftarDesaAdmin = () => {
-  const currentPage = 1;
   const [villages, setVillages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    lastPage: 1,
+    total: 0,
+    perPage: 10
+  });
+
+  const loadVillages = async (page = 1) => {
+    try {
+      setLoading(true);
+      const response = await dataApi.listVillages({ 
+        page: page,
+        per_page: pagination.perPage,
+        is_active: 'all' 
+      });
+      setVillages(response.items || []);
+      if (response.meta) {
+        setPagination(prev => ({
+          ...prev,
+          currentPage: response.meta.current_page || page,
+          lastPage: response.meta.last_page || 1,
+          total: response.meta.total || 0
+        }));
+      }
+    } catch (error) {
+      console.error('Gagal memuat daftar desa:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadVillages = async () => {
-      try {
-        setLoading(true);
-        const response = await dataApi.listVillages({ per_page: 100, is_active: 'all' });
-        setVillages(response.items || []);
-      } catch (error) {
-        console.error('Gagal memuat daftar desa:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadVillages();
-  }, []);
+    loadVillages(pagination.currentPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagination.currentPage]);
 
   return (
     <div className="min-h-screen bg-slate-100 py-8 px-4">
@@ -145,11 +161,8 @@ const DaftarDesaAdmin = () => {
                         onChange={async (newStatus) => {
                           try {
                             await dataApi.toggleVillageStatus(village.id, newStatus);
-                            setVillages((prev) =>
-                              prev.map((item) =>
-                                item.id === village.id ? { ...item, is_active: newStatus } : item
-                              )
-                            );
+                            // Refresh data setelah update
+                            loadVillages(pagination.currentPage);
                           } catch (error) {
                             console.error('Gagal mengubah status desa:', error);
                             alert('Gagal mengubah status desa.');
@@ -161,7 +174,7 @@ const DaftarDesaAdmin = () => {
                       <VillageDialog mode="edit" village={village} />
                     </TableCell>
                   </TableRow>
-                )) : (
+                )) ): (
                   <TableRow>
                     <TableCell colSpan={4} className="text-center text-gray-500">
                       Tidak ada data desa.
@@ -172,46 +185,76 @@ const DaftarDesaAdmin = () => {
             </Table>
           </CardContent>
           <CardFooter className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-white/70 px-6 py-5">
-            <Button
-              variant="ghost"
-              disabled
-              className="rounded-full border border-slate-200 bg-slate-100 text-slate-400 shadow-none hover:bg-slate-100"
-            >
-              Previous
-            </Button>
+            <div className="text-xs text-slate-500">
+              Menampilkan {villages.length} dari {pagination.total} desa
+            </div>
             <Pagination className="mx-0">
               <PaginationContent>
-                {pageNumbers.map((number, index) =>
-                  number === 'ellipsis' ? (
-                    <PaginationItem key={`ellipsis-${index}`}>
-                      <PaginationEllipsis className="text-slate-500" />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={number}>
+                <PaginationItem>
+                  <PaginationPrevious 
+                    onClick={() => {
+                      if (pagination.currentPage > 1) {
+                        setPagination(prev => ({ ...prev, currentPage: prev.currentPage - 1 }));
+                      }
+                    }}
+                    className={cn(
+                      "cursor-pointer",
+                      pagination.currentPage === 1 && "pointer-events-none opacity-50"
+                    )}
+                  />
+                </PaginationItem>
+                
+                {Array.from({ length: Math.min(5, pagination.lastPage) }, (_, i) => {
+                  let pageNum;
+                  if (pagination.lastPage <= 5) {
+                    pageNum = i + 1;
+                  } else if (pagination.currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (pagination.currentPage >= pagination.lastPage - 2) {
+                    pageNum = pagination.lastPage - 4 + i;
+                  } else {
+                    pageNum = pagination.currentPage - 2 + i;
+                  }
+                  
+                  return (
+                    <PaginationItem key={pageNum}>
                       <PaginationLink
-                        href="#"
-                        isActive={number === currentPage}
-                        size="default"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setPagination(prev => ({ ...prev, currentPage: pageNum }));
+                        }}
+                        isActive={pageNum === pagination.currentPage}
                         className={cn(
-                          'rounded-full px-3',
-                          number === currentPage
+                          'rounded-full px-3 cursor-pointer',
+                          pageNum === pagination.currentPage
                             ? 'border border-slate-300 bg-slate-200 text-slate-900'
                             : 'text-slate-500'
                         )}
                       >
-                        {number}
+                        {pageNum}
                       </PaginationLink>
                     </PaginationItem>
-                  )
-                )}
+                  );
+                })}
+
+                <PaginationItem>
+                  <PaginationNext 
+                    onClick={() => {
+                      if (pagination.currentPage < pagination.lastPage) {
+                        setPagination(prev => ({ ...prev, currentPage: prev.currentPage + 1 }));
+                      }
+                    }}
+                    className={cn(
+                      "cursor-pointer",
+                      pagination.currentPage === pagination.lastPage && "pointer-events-none opacity-50"
+                    )}
+                  />
+                </PaginationItem>
               </PaginationContent>
             </Pagination>
-            <Button
-              variant="ghost"
-              className="rounded-full border border-slate-200 bg-slate-100 text-slate-600 shadow-none hover:bg-slate-100"
-            >
-              Next
-            </Button>
+            <div className="text-xs text-slate-500">
+              Halaman {pagination.currentPage} dari {pagination.lastPage}
+            </div>
           </CardFooter>
         </Card>
       </div>
@@ -252,7 +295,8 @@ const VillageDialog = ({ mode, village }) => {
         await dataApi.updateVillage(village.id, payload);
       }
 
-      window.location.reload();
+      // Refresh data setelah simpan
+      loadVillages(pagination.currentPage);
     } catch (error) {
       console.error('Gagal menyimpan desa:', error);
       alert('Gagal menyimpan desa. Pastikan data sudah benar.');

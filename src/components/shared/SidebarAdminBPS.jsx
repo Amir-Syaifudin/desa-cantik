@@ -1,12 +1,20 @@
 // src/components/shared/SidebarAdminBPS.jsx
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { LogOut, ChevronLeft } from 'lucide-react';
 import { adminMenuItems } from '../../routes/config'; // Impor menu dari config
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function SidebarAdminBPS({ isCollapsed, setIsCollapsed }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
    return (
       <aside
@@ -15,7 +23,7 @@ export default function SidebarAdminBPS({ isCollapsed, setIsCollapsed }) {
           ${isCollapsed ? 'w-16' : 'w-64'}`}
       >
   
-        {/* MENU  */}
+        {/* MENU - Semua menu dari adminMenuItems (termasuk Data Statistik) */}
         <nav className="pt-6 px-3 flex-1 min-h-0 overflow-y-auto">
           <ul className="space-y-1">
             {adminMenuItems.map((item) => {
@@ -48,15 +56,13 @@ export default function SidebarAdminBPS({ isCollapsed, setIsCollapsed }) {
         {/* LOGOUT */}
         <div className="border-t border-gray-200 p-3">
           <Button
-            asChild
             variant="outline"
+            onClick={handleLogout}
             className={`w-full ${isCollapsed ? 'px-0' : ''}`}
             title={isCollapsed ? 'Logout' : undefined}
           >
-            <Link to="/login">
-              <LogOut className="h-5 w-5" />
-              {!isCollapsed && <span className="ml-2">Logout</span>}
-            </Link>
+            <LogOut className="h-5 w-5" />
+            {!isCollapsed && <span className="ml-2">Logout</span>}
           </Button>
         </div>
   

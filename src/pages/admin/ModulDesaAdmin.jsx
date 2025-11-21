@@ -119,7 +119,7 @@ const ModulDesaAdmin = () => {
             <div>
               <h3 className="text-2xl font-semibold text-slate-900">Edit Modul Desa</h3>
             </div>
-          <ModuleDialog mode="add" />
+          <ModuleDialog mode="add" selectedVillage={selectedVillage} />
           </div>
 
           <Card className="rounded-2xl border-slate-200 shadow-lg">
@@ -164,7 +164,7 @@ const ModulDesaAdmin = () => {
                       </TableCell>
                       <TableCell>{module.description}</TableCell>
                       <TableCell className="text-center">
-                        <ModuleDialog mode="edit" module={module} />
+                        <ModuleDialog mode="edit" module={module} selectedVillage={selectedVillage} />
                       </TableCell>
                       <TableCell className="text-center">
                         <StatusToggle
@@ -202,12 +202,13 @@ const ModulDesaAdmin = () => {
 
 export default ModulDesaAdmin;
 
-const ModuleDialog = ({ mode, module }) => {
+const ModuleDialog = ({ mode, module, selectedVillage }) => {
   const [open, setOpen] = useState(false);
   const [formValues, setFormValues] = useState({
     name: module?.name || '',
     description: module?.description || '',
   });
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -225,10 +226,30 @@ const ModuleDialog = ({ mode, module }) => {
     setFormValues((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: integrate with API
-    setOpen(false);
+    try {
+      setSubmitting(true);
+      const payload = {
+        name: formValues.name,
+        description: formValues.description,
+      };
+
+      if (mode === 'add') {
+        await apiClient.post(`/villages/${selectedVillage}/modules`, payload);
+      } else if (module?.id || module?.module_name || module?.name) {
+        const moduleId = module.id || module.module_name || module.name;
+        await apiClient.put(`/villages/${selectedVillage}/modules/${moduleId}`, payload);
+      }
+
+      window.location.reload();
+    } catch (error) {
+      console.error('Gagal menyimpan modul:', error);
+      alert('Gagal menyimpan modul. Pastikan data sudah benar.');
+    } finally {
+      setSubmitting(false);
+      setOpen(false);
+    }
   };
 
   const trigger =
@@ -289,9 +310,10 @@ const ModuleDialog = ({ mode, module }) => {
             <Button
               type="submit"
               className="flex min-w-[120px] items-center justify-center gap-2 rounded-full bg-emerald-200 text-emerald-900 hover:bg-emerald-300"
+              disabled={submitting}
             >
               <Save className="h-4 w-4" />
-              Simpan
+              {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
             <Button
               type="button"

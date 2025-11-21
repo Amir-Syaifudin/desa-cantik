@@ -121,6 +121,27 @@ export const dataApi = {
     return apiClient.delete(`/villages/${villageId}/statistics/${statisticId}`);
   },
 
+  async approveStatistic(villageId, statisticId) {
+    const response = await apiClient.put(`/villages/${villageId}/statistics/${statisticId}/approve`);
+    return response?.data;
+  },
+
+  async rejectStatistic(villageId, statisticId, reason = '') {
+    const response = await apiClient.put(`/villages/${villageId}/statistics/${statisticId}/reject`, {
+      reason: reason
+    });
+    return response?.data;
+  },
+
+  // List semua statistik untuk admin (semua desa)
+  async listAllStatistics(params) {
+    const response = await apiClient.get('/statistics', { params });
+    return {
+      items: response?.data || [],
+      meta: response?.meta || null,
+    };
+  },
+
   async listStatisticTypes() {
     const response = await apiClient.get("/statistic-types", {
       params: { per_page: 100 },

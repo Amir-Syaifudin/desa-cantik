@@ -17,6 +17,7 @@ export const adminMenuItems = [
   { id: 'admin-perangkat-desa', label: 'Perangkat Desa', icon: Users, path: '/admin/perangkat-desa' },
   { id: 'admin-daftar-desa', label: 'Daftar Desa', icon: MapPin, path: '/admin/daftar-desa' },
   { id: 'admin-modul-desa', label: 'Modul Desa', icon: BookOpen, path: '/admin/modul-desa' },
+  { id: 'admin-data-statistik', label: 'Data Statistik', icon: BarChart3, path: '/admin/data-statistik' },
   { id: 'admin-publikasi', label: 'Publikasi Desa', icon: FileText, path: '/admin/publikasi' },
   { id: 'admin-peta-tematik', label: 'Peta Tematik', icon: Map, path: '/admin/peta-tematik' },
   { id: 'admin-ubah-password', label: 'Ubah Password', icon: Lock, path: '/admin/ubah-password' },

@@ -152,7 +152,10 @@ export default function DataStatistikDesa() {
 
   // --- Handlers Dialog ---
   const handleOpenTambah = () => {
-    setFormState(defaultFormState);
+    setFormState({
+      ...defaultFormState,
+      status: 'Menunggu Validasi' // Set default status untuk tambah baru
+    });
     setEditingId(null);
     setIsDialogOpen(true);
   };
@@ -162,6 +165,7 @@ export default function DataStatistikDesa() {
     setFormState({
       ...stat,
       file: null, // Reset input file fisik
+      status: stat.status, // Pastikan status tetap sama (tidak bisa diubah)
     });
     setIsDialogOpen(true);
   };
@@ -190,7 +194,16 @@ export default function DataStatistikDesa() {
       
       formData.append('value', 0);
       formData.append('year', formState.updatedDate.getFullYear());
-      formData.append('status', formState.status);
+      
+      // FIX: Saat create, status otomatis "Menunggu Validasi", tidak bisa diubah manual
+      // Saat edit, status tetap seperti yang sudah ada (tidak bisa diubah oleh perangkat desa)
+      if (editingId) {
+        // Edit: tetap gunakan status yang sudah ada (tidak bisa diubah)
+        formData.append('status', formState.status);
+      } else {
+        // Create: otomatis "Menunggu Validasi"
+        formData.append('status', 'Menunggu Validasi');
+      }
       
       if (formState.file) {
         formData.append('file', formState.file);
@@ -432,14 +445,20 @@ export default function DataStatistikDesa() {
                   name="status"
                   value={formState.status}
                   onValueChange={(value) => handleSelectChange('status', value)}
+                  disabled={true} // Selalu disabled - status hanya bisa diubah oleh admin BPS
                 >
-                  <SelectTrigger id="status">
+                  <SelectTrigger id="status" className="bg-slate-100 cursor-not-allowed">
                     <SelectValue placeholder="Pilih status" />
                   </SelectTrigger>
                   <SelectContent>
                     {statusOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                   </SelectContent>
                 </Select>
+                {!editingId ? (
+                  <p className="text-xs text-slate-500">Status akan otomatis "Menunggu Validasi" setelah disimpan</p>
+                ) : (
+                  <p className="text-xs text-slate-500">Status hanya dapat diubah oleh Admin BPS</p>
+                )}
               </div>
             </div>
 

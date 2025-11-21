@@ -3,9 +3,10 @@
 **Sistem Informasi Desa Cinta Statistik - Frontend Application**
 
 ![Status](https://img.shields.io/badge/status-in%20development-yellow)
-![React](https://img.shields.io/badge/React-19.1.1-blue)
-![Vite](https://img.shields.io/badge/Vite-7.2.2-purple)
+![React](https://img.shields.io/badge/React-19.0.0--rc.1-blue)
+![Vite](https://img.shields.io/badge/Vite-7.1.7-purple)
 ![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4.18-cyan)
+![License](https://img.shields.io/badge/license-Academic-green)
 
 ---
 
@@ -84,28 +85,69 @@ Desa Cantik Frontend adalah aplikasi web berbasis React untuk **Sistem Informasi
 
 ## Fitur Utama
 
-1. **Authentication & Authorization**
+### 1. **Authentication & Authorization**
    - JWT-based login via backend API
-   - Role-based access: Admin BPS, Perangkat Desa, Masyarakat
+   - Role-based access control (RBAC):
+     - **Admin BPS**: Mengelola semua desa dan validasi data
+     - **Perangkat Desa**: Mengelola data desa masing-masing
+     - **Masyarakat**: Hanya melihat data publik
+   - Protected routes dengan `ProtectedRoute` component
+   - Auto token refresh dan logout
 
-2. **Manajemen Desa**
-   - CRUD data desa (Nonongan Selatan, Rindingbatu)
-   - Profil desa dengan demografi lengkap
+### 2. **Dashboard Role-Based**
+   - **Dashboard Admin BPS**: Overview semua desa, statistik agregat, aktivitas terkini
+   - **Dashboard Perangkat Desa**: Overview desa masing-masing, statistik lokal
+   - Visualisasi dengan Recharts (pie chart, bar chart)
 
-3. **Modul Statistik**
-   - Dashboard statistik per desa
-   - Visualisasi indikator (grafik & tabel)
-   - Input dan kelola data statistik
+### 3. **Manajemen Desa (Admin BPS)**
+   - **Daftar Desa**: CRUD data desa, toggle status aktif/nonaktif
+   - **Perangkat Desa**: Kelola akun perangkat desa (tambah, edit, hapus)
+   - **Modul Desa**: Kelola modul/fitur yang tersedia untuk setiap desa
+   - Pagination dan search untuk semua daftar
 
-4. **Peta Interaktif**
-   - Visualisasi batas wilayah desa (GeoJSON)
-   - Peta tematik dengan indikator statistik
-   - Layer control untuk berbagai dataset
+### 4. **Data Statistik dengan Validasi**
+   - **Perangkat Desa**: 
+     - Input data statistik (CSV upload)
+     - Status otomatis "Menunggu Validasi" saat create
+     - Tidak bisa mengubah status (hanya admin yang bisa)
+     - Filter berdasarkan subjek dan tahun
+   - **Admin BPS**:
+     - Lihat semua data statistik dari semua desa
+     - Validasi data (Setujui/Tolak)
+     - Filter berdasarkan desa dan status
+     - Alasan penolakan saat reject
+     - Search data statistik
+   
+   **Alur Validasi:**
+   1. Perangkat Desa menambah data → Status: "Menunggu Validasi"
+   2. Admin BPS melihat data di halaman Data Statistik
+   3. Admin BPS bisa:
+      - **Setujui** → Status: "Terverifikasi"
+      - **Tolak** → Status: "Ditolak" (dengan alasan)
+   4. Perangkat Desa melihat status update di halaman mereka
 
-5. **Manajemen Publikasi**
-   - Upload dokumen publikasi (PDF, Excel)
-   - Browser publikasi desa
-   - Integrasi dengan Spatie Media Library (backend)
+### 5. **Publikasi Desa**
+   - **Perangkat Desa**: Upload dan kelola publikasi desa (PDF)
+   - **Admin BPS**: Kelola publikasi semua desa
+   - Kategori: Laporan Statistik, Profil Desa, Infografis, Berita Resmi
+   - Search dan filter
+
+### 6. **Peta Tematik**
+   - **Perangkat Desa**: Kelola data geospatial dan layer peta untuk desa sendiri
+   - **Admin BPS**: Kelola peta tematik untuk semua desa
+   - Upload GeoJSON data
+   - Visualisasi dengan Leaflet.js
+   - Layer management dengan warna custom
+
+### 7. **Profil Umum Desa**
+   - Edit profil desa (nama, demografi, dll)
+   - Upload foto/gambar profil
+   - Informasi umum desa
+
+### 8. **Manajemen Modul**
+   - Admin BPS dapat mengaktifkan/nonaktifkan modul per desa
+   - Kontrol granular fitur yang bisa diakses setiap desa
+   - Modul: Data Statistik, Publikasi, Peta Tematik, Profil Umum
 
 ---
 
@@ -167,8 +209,10 @@ nano .env
 
 **Minimal configuration:**
 ```env
-VITE_API_URL=http://localhost:8000/api
+VITE_API_BASE_URL=http://localhost:8000/api/v1
 ```
+
+**Note:** Variable name harus `VITE_API_BASE_URL` (bukan `VITE_API_URL`)
 
 ### 5. Start Development Server
 
@@ -199,10 +243,20 @@ desa-cantik-frontend/
 │   │   └── images/
 │   │
 │   ├── components/           # Reusable UI components
-│   │   └── shared/
-│   │       ├── Footer.jsx
-│   │       ├── Navbar.jsx
-│   │       └── Sidebar.jsx
+│   │   ├── shared/          # Shared components
+│   │   │   ├── Footer.jsx
+│   │   │   ├── Header.jsx
+│   │   │   ├── Navbar.jsx
+│   │   │   ├── SidebarAdminBPS.jsx
+│   │   │   ├── SidebarPerangkatDesa.jsx
+│   │   │   ├── ProtectedRoute.jsx
+│   │   │   └── VillageDetailNavbar.jsx
+│   │   └── ui/              # shadcn/ui components
+│   │       ├── button.jsx
+│   │       ├── card.jsx
+│   │       ├── dialog.jsx
+│   │       ├── table.jsx
+│   │       └── ... (semua UI components)
 │   │
 │   ├── hooks/                # Custom React hooks
 │   │
@@ -214,22 +268,41 @@ desa-cantik-frontend/
 │   │   └── utils.js
 │   │
 │   ├── pages/                # Page components (routes)
-│   │   ├── admin/
+│   │   ├── admin/            # Halaman Admin BPS
 │   │   │   ├── DashboardAdmin.jsx
-│   │   │   └── KelolaDesa.jsx
-│   │   ├── desa/
+│   │   │   ├── DaftarDesaAdmin.jsx
+│   │   │   ├── PerangkatDesaAdmin.jsx
+│   │   │   ├── ModulDesaAdmin.jsx
+│   │   │   ├── DataStatistikAdmin.jsx
+│   │   │   ├── PublikasiDesaAdmin.jsx
+│   │   │   ├── PetaTematikAdmin.jsx
+│   │   │   └── UbahPasswordAdminBPS.jsx
+│   │   ├── desa/             # Halaman Perangkat Desa
 │   │   │   ├── DashboardDesa.jsx
-│   │   │   └── KelolaDataStatistik.jsx
-│   │   └── public/
+│   │   │   ├── ProfilUmumDesa.jsx
+│   │   │   ├── DataStatistikDesa.jsx
+│   │   │   ├── PublikasiDesa.jsx
+│   │   │   ├── PetaTematikDesa.jsx
+│   │   │   └── UbahPasswordPerangkatDesa.jsx
+│   │   └── public/           # Halaman Publik
 │   │       ├── Home.jsx
-│   │       └── Login.jsx
+│   │       ├── Login.jsx
+│   │       ├── Tentang.jsx
+│   │       └── VillageDetail.jsx
 │   │
 │   ├── routes/               # React Router configuration
-│   │   └── index.jsx
+│   │   ├── index.jsx         # Route definitions
+│   │   └── config.js         # Menu items untuk sidebar
 │   │
 │   ├── services/             # API service layer
-│   │   ├── authApi.js
-│   │   └── dataApi.js
+│   │   ├── apiClient.js      # HTTP client wrapper
+│   │   ├── authApi.js        # Authentication API
+│   │   ├── dataApi.js        # General data API (villages, stats, etc)
+│   │   ├── dashboardService.js
+│   │   ├── publicationService.js
+│   │   ├── statisticService.js
+│   │   ├── geoService.js
+│   │   └── villageProfileService.js
 │   │
 │   ├── App.css
 │   ├── App.jsx               # Root component
@@ -256,8 +329,8 @@ desa-cantik-frontend/
 Create `.env` in project root (gitignored):
 
 ```env
-# Backend API Base URL
-VITE_API_URL=http://localhost:8000/api
+# Backend API Base URL (dengan /v1 di akhir)
+VITE_API_BASE_URL=http://localhost:8000/api/v1
 
 # Optional: App Name
 VITE_APP_NAME="Desa Cantik"
@@ -270,7 +343,8 @@ VITE_APP_NAME="Desa Cantik"
 
 **Accessing in code:**
 ```javascript
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.VITE_API_BASE_URL;
+// Default fallback: 'http://localhost:8000/api/v1'
 ```
 
 ---
@@ -369,24 +443,30 @@ git commit -m "docs(readme): update installation steps"
 ```bash
 # Start development server (HMR enabled)
 npm run dev
+# Server akan berjalan di http://localhost:5173
 
 # Build for production
 npm run build
+# Output: /dist folder dengan optimized assets
 
 # Preview production build
 npm run preview
+# Preview build production secara lokal
 
 # Run linter
 npm run lint
-
-# Format code (if Prettier configured)
-npm run format
+# Check code quality dengan ESLint
 ```
 
 **Production Build Output:**
 - Creates `/dist` folder
 - Optimized, minified assets
-- Ready for deployment
+- Ready for deployment ke Vercel/Netlify/static hosting
+
+**Development Server:**
+- Hot Module Replacement (HMR) enabled
+- Fast refresh untuk React components
+- Auto-reload saat file berubah
 
 ---
 
@@ -407,17 +487,24 @@ npm run format
 ```bash
 # Terminal 1: Backend API
 cd ../desa-cantik-api
-docker-compose up -d
+php artisan serve  # atau docker-compose up -d
 
 # Terminal 2: Frontend
 cd desa-cantik-frontend
 npm run dev
 
 # Test endpoints:
+# - Home: http://localhost:5173/
 # - Login: http://localhost:5173/login
-# - Dashboard: http://localhost:5173/admin/dashboard
-# - Map: http://localhost:5173/desa/peta
+# - Admin Dashboard: http://localhost:5173/admin/dashboard
+# - Desa Dashboard: http://localhost:5173/desa-dashboard/dashboard
+# - Data Statistik Admin: http://localhost:5173/admin/data-statistik
+# - Peta Tematik: http://localhost:5173/admin/peta-tematik
 ```
+
+**Test Credentials (sesuaikan dengan backend):**
+- Admin BPS: `admin@bps.go.id` / `password`
+- Perangkat Desa: `perangkat@desa.go.id` / `password`
 
 ### Automated Testing (TODO)
 
@@ -491,13 +578,14 @@ Access to XMLHttpRequest blocked by CORS policy
 ### Issue: Environment variables not working
 
 **Solution:**
-1. **Prefix with `VITE_`:**
+1. **Prefix with `VITE_` dan gunakan nama yang benar:**
    ```env
    # Wrong
    API_URL=http://localhost:8000
+   VITE_API_URL=http://localhost:8000/api
 
    # Correct
-   VITE_API_URL=http://localhost:8000
+   VITE_API_BASE_URL=http://localhost:8000/api/v1
    ```
 
 2. **Restart dev server** after changing `.env`
@@ -565,6 +653,8 @@ Before submitting MR:
 - [shadcn/ui](https://ui.shadcn.com/)
 - [React Router](https://reactrouter.com/en/main)
 - [Leaflet](https://leafletjs.com/reference.html)
+- [Recharts](https://recharts.org/) - Chart library
+- [date-fns](https://date-fns.org/) - Date formatting
 
 **Backend API:**
 - [desa-cantik-api README](https://git.stis.ac.id/rpl-lancarnyaman/desa-cantik-api/-/blob/develop/README.md)
