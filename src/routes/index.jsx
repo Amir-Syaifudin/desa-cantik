@@ -1,5 +1,5 @@
 // src/routes/index.jsx
-import { BrowserRouter as Router, Routes, Route, Link, useParams, Outlet } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, useParams, Outlet } from 'react-router-dom';
 
 // Impor Halaman Publik
 import Home from '@/pages/public/Home';
@@ -10,12 +10,13 @@ import VillageDetail from '@/pages/public/VillageDetail';
 // --- Impor Halaman Admin BPS ---
 import DashboardLayout from '@/layouts/DashboardLayout'; 
 import DashboardAdmin from '@/pages/admin/DashboardAdmin';
-import UbahPasswordAdminBPS from '@/pages/admin/UbahPasswordAdminBPS'; 
-import PetaTematikAdmin from '@/pages/admin/PetaTematikAdmin';
-import ModulDesaAdmin from '@/pages/admin/ModulDesaAdmin';
-import DaftarDesaAdmin from '@/pages/admin/DaftarDesaAdmin';
 import PerangkatDesaAdmin from '@/pages/admin/PerangkatDesaAdmin';
+import DaftarDesaAdmin from '@/pages/admin/DaftarDesaAdmin';
+import ModulDesaAdmin from '@/pages/admin/ModulDesaAdmin';
 import PublikasiDesaAdmin from '@/pages/admin/PublikasiDesaAdmin';
+import PetaTematikAdmin from '@/pages/admin/PetaTematikAdmin';
+import UbahPasswordAdminBPS from '@/pages/admin/UbahPasswordAdminBPS'; 
+
 
 // --- Impor Halaman Perangkat Desa ---
 import DashboardDesa from '@/pages/desa/DashboardDesa';
@@ -25,9 +26,7 @@ import ProfilUmumDesa from '@/pages/desa/ProfilUmumDesa';
 import PublikasiDesa from '@/pages/desa/PublikasiDesa';
 import DataStatistikDesa from '@/pages/desa/DataStatistikDesa';
 
-// Protected Route Component
-import ProtectedRoute from '@/components/shared/ProtectedRoute';
-
+import TestAPI from '@/pages/TestAPI';
 
 // Komponen placeholder
 const Placeholder = ({ pageName }) => (
@@ -52,33 +51,19 @@ function AppRoutes() {
         <Route path="/lupa-password" element={<Placeholder pageName="Lupa Password" />} />
         
         {/* --- 2. Rute Layout Admin (Internal) --- */}
-        <Route 
-          path="/admin" 
-          element={
-            <ProtectedRoute allowedRoles={['bps_admin']}>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }
-        >
+        <Route path="/admin" element={<DashboardLayout />}>
+          <Route index element={<Navigate to="dashboard" replace />} />
           <Route path="dashboard" element={<DashboardAdmin />} />
-          <Route path="perangkat-desa" element={<PerangkatDesaAdmin pageName="Admin: Perangkat Desa" />} />
-          <Route path="daftar-desa" element={<DaftarDesaAdmin pageName="Admin: Daftar Desa" />} />
-          <Route path="modul-desa" element={<ModulDesaAdmin pageName="Admin: Modul Desa" />} />
-          <Route path="publikasi" element={<PublikasiDesaAdmin pageName="Admin: Publikasi" />} />
+          <Route path="perangkat-desa" element={<PerangkatDesaAdmin />} />
+          <Route path="daftar-desa" element={<DaftarDesaAdmin />} />
+          <Route path="modul-desa" element={<ModulDesaAdmin />} />
+          <Route path="publikasi-desa" element={<PublikasiDesaAdmin />} />
           <Route path="peta-tematik" element={<PetaTematikAdmin />} />
           <Route path="ubah-password" element={<UbahPasswordAdminBPS />} />
-          <Route index element={<DashboardAdmin />} /> 
         </Route>
         
         {/* --- 3. Rute Layout Perangkat Desa (Internal) --- */}
-        <Route 
-          path="/desa-dashboard" 
-          element={
-            <ProtectedRoute allowedRoles={['village_officer']}>
-              <DashboardLayout />
-            </ProtectedRoute>
-          }
-        >
+        <Route path="/desa-dashboard" element={<DashboardLayout />}>
           <Route path="dashboard" element={<DashboardDesa />} />
           <Route path="profil-umum" element={<ProfilUmumDesa pageName="Desa: Profil Umum" />} />
           <Route path="publikasi" element={<PublikasiDesa pageName="Desa: Publikasi" />} />
@@ -88,6 +73,8 @@ function AppRoutes() {
           <Route index element={<DashboardDesa />} />
         </Route>
 
+        {/* --- Rute Pengujian API --- */}
+        <Route path="/test-api" element={<TestAPI />} />
       </Routes>
     </Router>
   );

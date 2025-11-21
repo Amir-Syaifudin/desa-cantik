@@ -1,4 +1,4 @@
-// src/pages/dashboard/PerangkatDesaAdmin.jsx
+// src/pages/admin/PerangkatDesaAdmin.jsx
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/services/apiClient';
 import { Button } from '@/components/ui/button';
@@ -42,255 +42,407 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { 
-  Plus, 
-  Search, 
-  Edit, 
-  Trash2, 
-  Loader2, 
-  Save, 
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  Loader2,
+  Save,
   XCircle,
   Eye,
-  EyeOff
+  EyeOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function PerangkatDesaAdmin() {
-  // --- STATE ---
+  // ==================== STATE ====================
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [pagination, setPagination] = useState({
-    currentPage: 1,
-    lastPage: 1,
-    total: 0
-  });
-  const [search, setSearch] = useState('');
   
-  // State untuk Dialog
+  // ✅ FIX: Pisahkan state pagination untuk hindari infinite loop
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [perPage] = useState(10);
+  
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState(''); // Input field terpisah
+
+  // State untuk Dialog CRUD
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState('add'); // 'add' | 'edit'
   const [selectedUser, setSelectedUser] = useState(null);
-  const [villages, setVillages] = useState([]); // List desa untuk dropdown
+  const [formLoading, setFormLoading] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
 
-  // --- FETCH DATA ---
+  // State untuk Villages (dropdown)
+  const [villages, setVillages] = useState([]);
+
+  // Form data
+  const [formData, setFormData] = useState({
+    username: '',
+    email: '',
+    full_name: '',
+    password: '',
+    password_confirmation: '',
+    village_id: '',
+  });
+  const [showPassword, setShowPassword] = useState(false);
+
+  // ==================== FETCH DATA ====================
   
-  // 1. Fetch Daftar Desa (untuk dropdown form)
+  // 1. Fetch Villages (Load 1x saat mount)
   useEffect(() => {
     const fetchVillages = async () => {
       try {
-        const response = await apiClient.get('/villages', { params: { per_page: 100 } });
-        // FIX: Pastikan selalu array, cegah undefined
+        const response = await apiClient.get('/villages', {
+          params: { per_page: 100 },
+        });
         setVillages(response.data?.data || []);
       } catch (error) {
-        console.error("Gagal memuat daftar desa:", error);
-        setVillages([]); // Set kosong jika error
+        console.error('Error fetching villages:', error);
+        setVillages([]);
       }
     };
     fetchVillages();
   }, []);
 
   // 2. Fetch Users (Perangkat Desa)
-  const fetchUsers = async (page = 1, searchTerm = '') => {
-    setLoading(true);
-    try {
-      const response = await apiClient.get('/users', {
-        params: {
-          role: 'village_officer', // Filter khusus perangkat desa
-          page: page,
-          per_page: 10,
-          search: searchTerm
-        }
-      });
-      
-      setUsers(response.data.data || []);
-      setPagination({
-        currentPage: response.data.meta?.current_page || 1,
-        lastPage: response.data.meta?.last_page || 1,
-        total: response.data.meta?.total || 0
-      });
-    } catch (error) {
-      console.error("Gagal memuat data perangkat desa:", error);
-      setUsers([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Load data saat pertama kali render atau page berubah
+  // ✅ FIX: useEffect dengan dependency yang benar
   useEffect(() => {
-    fetchUsers(pagination.currentPage, search);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pagination.currentPage]);
+    const fetchUsers = async () => {
+      setLoading(true);
+      try {
+        const response = await apiClient.get('/users', {
+          params: {
+            role: 'village_officer',
+            page: currentPage,
+            per_page: perPage,
+            search: search || undefined, // Kirim undefined jika kosong
+          },
+        });
 
-  // --- HANDLERS ---
+        console.log('API Response:', response.data); // Debug
 
-  const handleSearch = (e) => {
+        // ✅ FIX: Set data dengan fallback empty array
+        setUsers(response.data?.data || []);
+        setTotalPages(response.data?.meta?.last_page || 1);
+        setTotalUsers(response.data?.meta?.total || 0);
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        setUsers([]);
+        setTotalPages(1);
+        setTotalUsers(0);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, [currentPage, search, perPage]); // ✅ Dependency: currentPage, search
+
+  // ==================== HANDLERS ====================
+
+  const handleSearchSubmit = (e) => {
     e.preventDefault();
-    setPagination(prev => ({ ...prev, currentPage: 1 })); // Reset ke halaman 1
-    fetchUsers(1, search);
+    setSearch(searchInput); // Trigger useEffect dengan search baru
+    setCurrentPage(1); // Reset ke halaman 1
   };
 
   const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= pagination.lastPage) {
-      setPagination(prev => ({ ...prev, currentPage: newPage }));
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus akun perangkat desa ini?')) {
-      try {
-        await apiClient.delete(`/users/${id}`);
-        fetchUsers(pagination.currentPage, search); // Refresh data
-      } catch (error) {
-        alert("Gagal menghapus data: " + (error.response?.data?.message || error.message));
-      }
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   const openAddDialog = () => {
     setDialogMode('add');
     setSelectedUser(null);
+    setFormData({
+      username: '',
+      email: '',
+      full_name: '',
+      password: '',
+      password_confirmation: '',
+      village_id: '',
+    });
+    setFormErrors({});
+    setShowPassword(false);
     setIsDialogOpen(true);
   };
 
   const openEditDialog = (user) => {
     setDialogMode('edit');
     setSelectedUser(user);
+    setFormData({
+      username: user.username || '',
+      email: user.email || '',
+      full_name: user.full_name || '',
+      password: '',
+      password_confirmation: '',
+      village_id: user.village?.id?.toString() || '',
+    });
+    setFormErrors({});
+    setShowPassword(false);
     setIsDialogOpen(true);
   };
 
-  const handleDialogSuccess = () => {
-    setIsDialogOpen(false);
-    fetchUsers(pagination.currentPage, search); // Refresh data setelah simpan
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    // Clear error untuk field yang diubah
+    if (formErrors[name]) {
+      setFormErrors((prev) => ({ ...prev, [name]: null }));
+    }
   };
 
-  return (
-    <div className="w-full space-y-6">
+  const handleVillageChange = (value) => {
+    setFormData((prev) => ({ ...prev, village_id: value }));
+    if (formErrors.village_id) {
+      setFormErrors((prev) => ({ ...prev, village_id: null }));
+    }
+  };
+
+  const handleSaveUser = async (e) => {
+    e.preventDefault();
+    setFormLoading(true);
+    setFormErrors({});
+
+    try {
+      const payload = {
+        username: formData.username,
+        email: formData.email,
+        full_name: formData.full_name,
+        village_id: parseInt(formData.village_id),
+        role_id: 2, // Hardcode role_id untuk village_officer (sesuaikan dengan ID di database)
+      };
+
+      // Tambahkan password hanya jika diisi
+      if (formData.password) {
+        payload.password = formData.password;
+        payload.password_confirmation = formData.password_confirmation;
+      }
+
+      if (dialogMode === 'add') {
+        await apiClient.post('/users', payload);
+      } else {
+        // Untuk update, password optional
+        await apiClient.put(`/users/${selectedUser.id}`, payload);
+      }
+
+      setIsDialogOpen(false);
+      setCurrentPage(1); // Reset ke halaman 1 setelah berhasil
+      // ✅ Trigger re-fetch dengan mengubah search (force refresh)
+      setSearch((prev) => prev); // Trigger useEffect tanpa ubah value
+    } catch (error) {
+      console.error('Error saving user:', error);
       
-      {/* HEADER & FILTER */}
-      <header className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-        <div>
-          <h2 className="text-2xl font-semibold text-slate-900">
-            Daftar Perangkat Desa
-          </h2>
-          <p className="text-sm text-slate-500 mt-1">
+      // Handle validation errors
+      if (error.response?.data?.errors) {
+        setFormErrors(error.response.data.errors);
+      } else {
+        alert('Gagal menyimpan data: ' + (error.response?.data?.message || error.message));
+      }
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId) => {
+    if (!window.confirm('Apakah Anda yakin ingin menghapus akun perangkat desa ini?')) {
+      return;
+    }
+
+    try {
+      await apiClient.delete(`/users/${userId}`);
+      
+      // Jika halaman current jadi kosong, pindah ke halaman sebelumnya
+      if (users.length === 1 && currentPage > 1) {
+        setCurrentPage(currentPage - 1);
+      } else {
+        // ✅ Force refresh dengan toggle search
+        setSearch((prev) => prev);
+      }
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('Gagal menghapus data: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // ==================== RENDER ====================
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Daftar Perangkat Desa</CardTitle>
+          <p className="text-sm text-muted-foreground">
             Kelola akun dan akses untuk perangkat desa.
           </p>
-        </div>
-        
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <form onSubmit={handleSearch} className="relative flex-1 md:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
-            <Input
-              placeholder="Cari nama atau email..."
-              className="pl-9 bg-slate-50 border-slate-200"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </form>
-          <Button onClick={openAddDialog} className="bg-[#1C6EA4] hover:bg-[#154D71] shadow-sm whitespace-nowrap">
-            <Plus className="h-4 w-4 mr-2" />
-            Tambah Akun
-          </Button>
-        </div>
-      </header>
+        </CardHeader>
+        <CardContent>
+          {/* Search & Add Button */}
+          <div className="flex items-center gap-4 mb-6">
+            <form onSubmit={handleSearchSubmit} className="flex flex-1 gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Cari nama atau email..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Button type="submit" variant="outline">
+                Cari
+              </Button>
+            </form>
+            <Button onClick={openAddDialog}>
+              <Plus className="mr-2 h-4 w-4" />
+              Tambah Akun
+            </Button>
+          </div>
 
-      {/* TABEL DATA */}
-      <Card className="border-slate-200 shadow-lg w-full overflow-hidden">
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader className="bg-slate-50">
-              <TableRow className="border-slate-100">
-                <TableHead className="w-[50px] text-center font-semibold text-slate-600">No</TableHead>
-                <TableHead className="font-semibold text-slate-600">Nama Lengkap</TableHead>
-                <TableHead className="font-semibold text-slate-600">Username</TableHead>
-                <TableHead className="font-semibold text-slate-600">Desa</TableHead>
-                <TableHead className="font-semibold text-slate-600">Email</TableHead>
-                <TableHead className="text-right font-semibold text-slate-600 pr-6">Aksi</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+          {/* Table */}
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center">
-                    <div className="flex flex-col items-center justify-center text-slate-500">
-                      <Loader2 className="h-8 w-8 animate-spin mb-2" />
-                      <p>Memuat data...</p>
-                    </div>
-                  </TableCell>
+                  <TableHead className="w-12">No</TableHead>
+                  <TableHead>Nama Lengkap</TableHead>
+                  <TableHead>Username</TableHead>
+                  <TableHead>Desa</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
-              ) : users.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32 text-center text-slate-500">
-                    Belum ada data perangkat desa.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                users.map((user, index) => (
-                  <TableRow key={user.id} className="border-slate-100 hover:bg-slate-50/50">
-                    <TableCell className="text-center text-slate-500">
-                      {(pagination.currentPage - 1) * 10 + index + 1}
-                    </TableCell>
-                    <TableCell className="font-medium text-slate-900">{user.full_name}</TableCell>
-                    <TableCell className="text-slate-600">{user.username}</TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-700/10">
-                        {user.village?.name || '-'}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-slate-600">{user.email}</TableCell>
-                    <TableCell className="text-right pr-6">
-                      <div className="flex justify-end gap-2">
-                        <Button 
-                          variant="outline" 
-                          size="icon" 
-                          className="h-8 w-8 border-slate-200 text-slate-600 hover:text-blue-600 hover:border-blue-200"
-                          onClick={() => openEditDialog(user)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="icon" 
-                          className="h-8 w-8 border-slate-200 text-slate-600 hover:text-red-600 hover:border-red-200 hover:bg-red-50"
-                          onClick={() => handleDelete(user.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto" />
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        Memuat data...
+                      </p>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      <p className="text-muted-foreground">
+                        Belum ada data perangkat desa.
+                      </p>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  users.map((user, index) => (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        {(currentPage - 1) * perPage + index + 1}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {user.full_name}
+                      </TableCell>
+                      <TableCell>{user.username}</TableCell>
+                      <TableCell>{user.village?.name || '-'}</TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openEditDialog(user)}
+                          >
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteUser(user.id)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
 
-        {/* FOOTER PAGINATION (FIXED PANNING) */}
-        {!loading && users.length > 0 && (
-          <CardFooter className="flex flex-wrap items-center justify-between gap-4 border-t border-slate-100 bg-slate-50 px-6 py-4">
-            <div className="text-xs text-slate-500">
-              Menampilkan {users.length} dari {pagination.total} data
+        {/* Pagination */}
+        {!loading && totalUsers > 0 && (
+          <CardFooter className="flex items-center justify-between border-t pt-6">
+            <div className="text-sm text-muted-foreground">
+              Menampilkan {(currentPage - 1) * perPage + 1} -{' '}
+              {Math.min(currentPage * perPage, totalUsers)} dari {totalUsers}{' '}
+              data
             </div>
-            <Pagination className="mx-0 w-auto">
+            <Pagination>
               <PaginationContent>
                 <PaginationItem>
-                  <PaginationPrevious 
-                    onClick={() => handlePageChange(pagination.currentPage - 1)}
-                    className={cn("cursor-pointer", pagination.currentPage === 1 && "pointer-events-none opacity-50")}
+                  <PaginationPrevious
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    className={cn(
+                      currentPage === 1 && 'pointer-events-none opacity-50'
+                    )}
                   />
                 </PaginationItem>
                 
-                <PaginationItem>
-                  <span className="px-4 text-sm font-medium">
-                    Halaman {pagination.currentPage} dari {pagination.lastPage}
-                  </span>
-                </PaginationItem>
+                {/* Page Numbers */}
+                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                  .filter((page) => {
+                    // Show first page, last page, current page, and adjacent pages
+                    return (
+                      page === 1 ||
+                      page === totalPages ||
+                      Math.abs(page - currentPage) <= 1
+                    );
+                  })
+                  .map((page, index, array) => {
+                    // Show ellipsis if gap
+                    if (index > 0 && array[index - 1] !== page - 1) {
+                      return (
+                        <React.Fragment key={`ellipsis-${page}`}>
+                          <PaginationItem>
+                            <span className="px-2">...</span>
+                          </PaginationItem>
+                          <PaginationItem>
+                            <PaginationLink
+                              onClick={() => handlePageChange(page)}
+                              isActive={page === currentPage}
+                            >
+                              {page}
+                            </PaginationLink>
+                          </PaginationItem>
+                        </React.Fragment>
+                      );
+                    }
+                    return (
+                      <PaginationItem key={page}>
+                        <PaginationLink
+                          onClick={() => handlePageChange(page)}
+                          isActive={page === currentPage}
+                        >
+                          {page}
+                        </PaginationLink>
+                      </PaginationItem>
+                    );
+                  })}
 
                 <PaginationItem>
-                  <PaginationNext 
-                    onClick={() => handlePageChange(pagination.currentPage + 1)}
-                    className={cn("cursor-pointer", pagination.currentPage === pagination.lastPage && "pointer-events-none opacity-50")}
+                  <PaginationNext
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    className={cn(
+                      currentPage === totalPages &&
+                        'pointer-events-none opacity-50'
+                    )}
                   />
                 </PaginationItem>
               </PaginationContent>
@@ -299,221 +451,203 @@ export default function PerangkatDesaAdmin() {
         )}
       </Card>
 
-      {/* DIALOG FORM */}
-      <UserFormDialog 
-        open={isDialogOpen} 
-        onOpenChange={setIsDialogOpen}
-        mode={dialogMode}
-        userData={selectedUser}
-        villages={villages}
-        onSuccess={handleDialogSuccess}
-      />
-    </div>
-  );
-}
+      {/* Dialog Form */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {dialogMode === 'add'
+                ? 'Tambah Akun Perangkat Desa'
+                : 'Edit Akun Perangkat Desa'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSaveUser} className="space-y-4">
+            {/* Username */}
+            <div className="space-y-2">
+              <Label htmlFor="username">
+                Username <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="username"
+                name="username"
+                value={formData.username}
+                onChange={handleFormChange}
+                placeholder="username_desa"
+                required
+                disabled={formLoading}
+              />
+              {formErrors.username && (
+                <p className="text-sm text-destructive">
+                  {formErrors.username[0]}
+                </p>
+              )}
+            </div>
 
-// --- KOMPONEN FORM DIALOG (TERPISAH AGAR RAPI) ---
-// FIX: Tambahkan default value villages = [] untuk mencegah crash jika data belum ada
-function UserFormDialog({ open, onOpenChange, mode, userData, villages = [], onSuccess }) {
-  const [formData, setFormData] = useState({
-    full_name: '',
-    username: '',
-    email: '',
-    village_id: '',
-    password: '',
-    password_confirmation: ''
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+            {/* Email */}
+            <div className="space-y-2">
+              <Label htmlFor="email">
+                Email <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                value={formData.email}
+                onChange={handleFormChange}
+                placeholder="email@desacantik.id"
+                required
+                disabled={formLoading}
+              />
+              {formErrors.email && (
+                <p className="text-sm text-destructive">{formErrors.email[0]}</p>
+              )}
+            </div>
 
-  // Reset form saat dialog dibuka/mode berubah
-  useEffect(() => {
-    if (open) {
-      if (mode === 'edit' && userData) {
-        setFormData({
-          full_name: userData.full_name || '',
-          username: userData.username || '',
-          email: userData.email || '',
-          village_id: userData.village?.id?.toString() || '',
-          password: '', // Password kosong saat edit (kecuali mau diubah)
-          password_confirmation: ''
-        });
-      } else {
-        setFormData({
-          full_name: '',
-          username: '',
-          email: '',
-          village_id: '',
-          password: '',
-          password_confirmation: ''
-        });
-      }
-    }
-  }, [open, mode, userData]);
+            {/* Nama Lengkap */}
+            <div className="space-y-2">
+              <Label htmlFor="full_name">
+                Nama Lengkap <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="full_name"
+                name="full_name"
+                value={formData.full_name}
+                onChange={handleFormChange}
+                placeholder="Nama Lengkap Perangkat"
+                required
+                disabled={formLoading}
+              />
+              {formErrors.full_name && (
+                <p className="text-sm text-destructive">
+                  {formErrors.full_name[0]}
+                </p>
+              )}
+            </div>
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSelectChange = (value) => {
-    setFormData(prev => ({ ...prev, village_id: value }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    try {
-      const payload = {
-        ...formData,
-        role: 'village_officer' // Role otomatis diset
-      };
-
-      // Jika edit dan password kosong, hapus field password agar tidak terupdate
-      if (mode === 'edit' && !payload.password) {
-        delete payload.password;
-        delete payload.password_confirmation;
-      }
-
-      if (mode === 'add') {
-        await apiClient.post('/users', payload);
-      } else {
-        await apiClient.put(`/users/${userData.id}`, payload);
-      }
-
-      onSuccess(); // Callback refresh data
-    } catch (error) {
-      const msg = error.response?.data?.message || "Terjadi kesalahan saat menyimpan data.";
-      alert(msg);
-      // Jika ada error validasi field spesifik, idealnya ditampilkan di bawah input
-      console.error(error.response?.data?.errors);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{mode === 'add' ? 'Tambah Akun Perangkat Desa' : 'Edit Akun Perangkat Desa'}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 py-4">
-          
-          {/* Nama Lengkap */}
-          <div className="space-y-2">
-            <Label htmlFor="full_name">Nama Lengkap</Label>
-            <Input 
-              id="full_name" 
-              name="full_name" 
-              value={formData.full_name} 
-              onChange={handleChange} 
-              placeholder="Contoh: Budi Santoso" 
-              required 
-            />
-          </div>
-
-          {/* Username */}
-          <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
-            <Input 
-              id="username" 
-              name="username" 
-              value={formData.username} 
-              onChange={handleChange} 
-              placeholder="username_desa" 
-              required 
-            />
-          </div>
-
-          {/* Email */}
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input 
-              id="email" 
-              name="email" 
-              type="email" 
-              value={formData.email} 
-              onChange={handleChange} 
-              placeholder="email@desa.go.id" 
-              required 
-            />
-          </div>
-
-          {/* Desa (Dropdown) */}
-          <div className="space-y-2">
-            <Label htmlFor="village_id">Desa</Label>
-            {/* FIX: Tambahkan pengecekan villages sebelum map */}
-            <Select value={formData.village_id} onValueChange={handleSelectChange} required>
-              <SelectTrigger>
-                <SelectValue placeholder="Pilih Desa" />
-              </SelectTrigger>
-              <SelectContent>
-                {villages && villages.length > 0 ? (
-                  villages.map((village) => (
+            {/* Desa Binaan */}
+            <div className="space-y-2">
+              <Label htmlFor="village_id">
+                Desa Binaan <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={formData.village_id}
+                onValueChange={handleVillageChange}
+                required
+                disabled={formLoading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih desa..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {villages.map((village) => (
                     <SelectItem key={village.id} value={village.id.toString()}>
                       {village.name}
                     </SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="none" disabled>Tidak ada data desa</SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Password Fields */}
-          <div className="space-y-3 pt-2 border-t">
-            <div className="flex items-center justify-between">
-              <Label className="font-semibold">
-                {mode === 'add' ? 'Password Akun' : 'Ubah Password (Opsional)'}
-              </Label>
-              <button 
-                type="button" 
-                onClick={() => setShowPassword(!showPassword)}
-                className="text-xs text-blue-600 hover:underline flex items-center"
-              >
-                {showPassword ? <><EyeOff className="w-3 h-3 mr-1"/> Sembunyi</> : <><Eye className="w-3 h-3 mr-1"/> Lihat</>}
-              </button>
+                  ))}
+                </SelectContent>
+              </Select>
+              {formErrors.village_id && (
+                <p className="text-sm text-destructive">
+                  {formErrors.village_id[0]}
+                </p>
+              )}
             </div>
-            
+
+            {/* Password */}
             <div className="space-y-2">
-              <Input 
-                id="password" 
-                name="password" 
-                type={showPassword ? "text" : "password"} 
-                value={formData.password} 
-                onChange={handleChange} 
-                placeholder={mode === 'add' ? "Masukkan password" : "Isi jika ingin mengubah"} 
-                required={mode === 'add'} // Wajib saat tambah
+              <Label htmlFor="password">
+                Password
+                {dialogMode === 'add' && (
+                  <span className="text-destructive"> *</span>
+                )}
+                {dialogMode === 'edit' && (
+                  <span className="text-muted-foreground text-xs">
+                    {' '}
+                    (Kosongkan jika tidak ingin mengubah)
+                  </span>
+                )}
+              </Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={handleFormChange}
+                  placeholder="Minimal 8 karakter"
+                  required={dialogMode === 'add'}
+                  disabled={formLoading}
+                  minLength={8}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              {formErrors.password && (
+                <p className="text-sm text-destructive">
+                  {formErrors.password[0]}
+                </p>
+              )}
+            </div>
+
+            {/* Konfirmasi Password */}
+            <div className="space-y-2">
+              <Label htmlFor="password_confirmation">
+                Konfirmasi Password
+                {dialogMode === 'add' && (
+                  <span className="text-destructive"> *</span>
+                )}
+              </Label>
+              <Input
+                id="password_confirmation"
+                name="password_confirmation"
+                type={showPassword ? 'text' : 'password'}
+                value={formData.password_confirmation}
+                onChange={handleFormChange}
+                placeholder="Ulangi password"
+                required={dialogMode === 'add' || formData.password !== ''}
+                disabled={formLoading}
                 minLength={8}
               />
             </div>
-            
-            <div className="space-y-2">
-              <Input 
-                id="password_confirmation" 
-                name="password_confirmation" 
-                type={showPassword ? "text" : "password"} 
-                value={formData.password_confirmation} 
-                onChange={handleChange} 
-                placeholder="Konfirmasi password" 
-                required={mode === 'add' || formData.password.length > 0} // Wajib jika password diisi
-              />
-            </div>
-            {mode === 'add' && <p className="text-[10px] text-slate-500">Minimal 8 karakter.</p>}
-          </div>
 
-          <DialogFooter className="pt-4">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Batal</Button>
-            <Button type="submit" className="bg-[#1C6EA4] hover:bg-[#154D71]" disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2"/> : <Save className="w-4 h-4 mr-2"/>}
-              {mode === 'add' ? 'Simpan Akun' : 'Simpan Perubahan'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsDialogOpen(false)}
+                disabled={formLoading}
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                Batal
+              </Button>
+              <Button type="submit" disabled={formLoading}>
+                {formLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Menyimpan...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Simpan
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

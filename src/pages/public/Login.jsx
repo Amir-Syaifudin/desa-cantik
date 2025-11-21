@@ -1,14 +1,13 @@
-// src/pages/public/Login.jsx
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom'; // Import Link dan useNavigate
+import { Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ArrowLeft, Lock, User, Eye, EyeOff } from 'lucide-react';
-import logoDc from '@/assets/images/logo_dc.png'; // Import logo desa
-import background from '@/assets/images/bg.jpg'; // Import gambar latar belakang
-import { useAuth } from '@/contexts/AuthContext';
+import logoDc from '@/assets/images/logo_dc.png';
+import background from '@/assets/images/bg.jpg';
+import { apiClient } from '@/services/apiClient';
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -19,28 +18,50 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
-  const { login } = useAuth();
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
+
     try {
-      const user = await login(username, password);
+      // 1. Request Login Langsung ke Backend
+      // Backend AuthController menerima 'login' (bukan 'username') untuk handle email/username
+      const response = await apiClient.post('/auth/login', {
+        login: username,
+        password: password
+      });
+
+      // 2. Bongkar Response
+      // Struktur Backend: { success: true, data: { token, user: { role: { role_name } } } }
+      const { token, user } = response.data;
       const roleName = user?.role?.role_name;
+
+      if (!roleName) {
+        throw new Error("Role pengguna tidak valid atau tidak ditemukan.");
+      }
+
+      // 3. Simpan Session (KF-1 & KF-2 IN ACTION)
+      // Ini menjamin token tersimpan dengan key yang benar ('desaCantikToken')
+      apiClient.setAuthSession(token, roleName);
       
-      // Navigate based on role
-      if (roleName === 'bps_admin') {
-        navigate('/admin/dashboard');
-      } else if (roleName === 'village_officer') {
-        navigate('/desa-dashboard/dashboard');
-      } else {
-        console.warn('Role tidak dikenali:', roleName);
-        navigate('/desa-dashboard/dashboard');
-;      }
+      // Simpan info user lengkap untuk kebutuhan UI lain (opsional tapi recommended)
+      localStorage.setItem('user', JSON.stringify(user));
+
+      // 4. Navigasi Berdasarkan Role (KF-2 Routing)
+    if (roleName === 'bps_admin') {
+      navigate('/admin/dashboard', { replace: true });
+    } else if (roleName === 'village_officer') {
+      navigate('/desa-dashboard/dashboard', { replace: true });
+    } else {
+      navigate('/');
+    }
+
     } catch (err) {
       console.error('Login Error:', err);
-      setError(err?.message || 'Username atau password salah.');
+      // Tampilkan pesan error yang user-friendly
+      const errorMessage = err.message || 'Username atau password salah.';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -133,7 +154,7 @@ export default function Login() {
               </div>
             </div>
 
-                            {/* Ingat Password */}
+                {/* Ingat Password */}
 
                 <div className="flex items-center justify-between text-sm">
                   <label className="flex items-center gap-2 cursor-pointer">
@@ -141,7 +162,7 @@ export default function Login() {
                     <span className="text-gray-600">Ingat saya</span>
                   </label>
 
-                            {/* Lupa Password */}
+                    {/* Lupa Password */}
 
                   <Link to="/lupa-password" className="text-[#33A1E0] hover:underline">
                     Lupa password?
@@ -151,7 +172,7 @@ export default function Login() {
                 <p className="text-sm text-red-600 mt-4 text-center">{error}</p>
                   )}
 
-                            {/* Submit Button */}
+                    {/* Submit Button */}
 
                 <Button
                   type="submit"
