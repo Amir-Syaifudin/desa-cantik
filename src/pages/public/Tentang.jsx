@@ -9,17 +9,13 @@ import Footer from '@/components/shared/Footer';
 
 // Impor service untuk mengambil data dari backend
 import { dashboardService } from '@/services/dashboardService';
+import { programService } from '@/services/programService';
 
 const Tentang = () => {
   const [stats, setStats] = useState([]);
   const [loadingStats, setLoadingStats] = useState(true);
-
-  // Data statis untuk pengelola program (bisa diganti dengan data dari backend jika tersedia)
-  const pengelola = [
-    { name: 'Pengelola 1', role: 'Koordinator Program' },
-    { name: 'Pengelola 2', role: 'Fasilitator Lapangan' },
-    { name: 'Pengelola 3', role: 'Analis Data' },
-  ];
+  const [team, setTeam] = useState([]);
+  const [sk, setSk] = useState(null);
 
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -72,6 +68,21 @@ const Tentang = () => {
     };
 
     loadStats();
+  }, []);
+
+  // Load Program Content (Team + SK)
+  useEffect(() => {
+    const loadContent = async () => {
+      try {
+        const data = await programService.getContent();
+        setTeam(data.managers || []);
+        setSk(data.sk || null);
+      } catch (error) {
+        console.error('Gagal memuat konten program:', error);
+      }
+    };
+
+    loadContent();
   }, []);
 
   return (
@@ -229,7 +240,7 @@ const Tentang = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-              {pengelola.map((person, index) => (
+              {team.map((person, index) => (
                 <Card key={index} className="text-center border-0 shadow-xl hover:shadow-2xl transition-all hover:scale-105">
                   <CardContent className="p-8">
                     <div className="w-40 h-40 mx-auto mb-6 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 shadow-xl overflow-hidden flex items-center justify-center">
@@ -271,11 +282,16 @@ const Tentang = () => {
                   <Button 
                     className="bg-[#1C6EA4] hover:bg-[#154D71] text-white text-lg px-10 py-6 shadow-lg hover:shadow-xl transition-all"
                     size="lg"
-                    // Ganti onClick ini dengan fungsi download jika URL SK tersedia di backend
-                    onClick={() => alert("Fitur download SK belum tersedia.")}
+                    onClick={() => {
+                      if (sk?.url) {
+                        window.open(sk.url, '_blank');
+                      } else {
+                        alert('URL SK belum tersedia.');
+                      }
+                    }}
                   >
                     <Download className="mr-2 h-5 w-5" />
-                    Download Surat Keputusan
+                    {sk?.title || 'Download Surat Keputusan'}
                   </Button>
                 </div>
               </div>

@@ -1,5 +1,5 @@
 // src/pages/admin/PublikasiDesa.jsx
-import { useState,useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Table,
   TableBody,
@@ -42,37 +42,11 @@ import {
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { dataApi } from '@/services/dataApi';
 
 // --- Data Dummy ---
-const dummyPublications = [
-  {
-    id: 1,
-    title: 'Laporan Statistik 2025',
-    subject: 'Statistik Desa',
-    releaseDate: new Date('2025-10-10'),
-    status: 'Rilis',
-    fileName: 'laporan-statistik-2025.pdf',
-    fileUrl: '/mock-files/laporan-statistik-2025.pdf', // URL mock
-  },
-  {
-    id: 2,
-    title: 'Partisipasi Sekolah Agustus 2025',
-    subject: 'Sosial',
-    releaseDate: new Date('2025-08-15'),
-    status: 'Rilis',
-    fileName: 'partisipasi-sekolah-ags.pdf',
-    fileUrl: '/mock-files/partisipasi-sekolah-ags.pdf', // URL mock
-  },
-  {
-    id: 3,
-    title: 'Data Ekonomi Triwulan 3',
-    subject: 'Ekonomi Lokal',
-    releaseDate: new Date('2025-09-30'),
-    status: 'Diarsipkan',
-    fileName: 'data-ekonomi-tw3.pdf',
-    fileUrl: '/mock-files/data-ekonomi-tw3.pdf', // URL mock
-  },
-];
+// const dummyPublications = []; 
 
 // Opsi untuk form select
 const subjectOptions = ['Statistik Desa', 'Sosial', 'Ekonomi Lokal', 'Pemerintahan'];
@@ -90,13 +64,38 @@ const defaultFormState = {
 };
 
 export default function PublikasiDesa() {
-  const [publications, setPublications] = useState(dummyPublications);
+  const { user } = useAuth();
+  const [publications, setPublications] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formState, setFormState] = useState(defaultFormState);
   const [editingId, setEditingId] = useState(null); 
 
   const [filterSubject, setFilterSubject] = useState('all');
   const [filterYear, setFilterYear] = useState('all');
+
+  useEffect(() => {
+    if (user?.village_id) {
+      loadData();
+    }
+  }, [user?.village_id]);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const data = await dataApi.listPublications(user.village_id, { per_page: 100 });
+      const formatted = data.items.map(item => ({
+        ...item,
+        subject: item.category,
+        releaseDate: item.publishedAt ? new Date(item.publishedAt) : new Date(),
+      }));
+      setPublications(formatted);
+    } catch (error) {
+      console.error("Failed to load publications", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // 1. Ambil Subjek Unik dari Data yang ada
   const availableSubjects = useMemo(() => {
@@ -164,47 +163,47 @@ export default function PublikasiDesa() {
     setFormState(defaultFormState);
   };
 
-  // --- Handler untuk Aksi ---
-  const handleSubmit = () => {
-    if (editingId) {
-      // Logika Edit
-      setPublications(
-        publications.map((pub) =>
-          pub.id === editingId
-            ? { ...pub, 
-                ...formState, 
-                // Pastikan fileName dan fileUrl diperbarui dengan benar
-                fileName: formState.file ? formState.file.name : pub.fileName,
-                fileUrl: formState.file ? formState.fileUrl : pub.fileUrl,
-                file: undefined // Jangan simpan file asli di state publikasi
-              }
-            : pub
-        )
-      );
-    } else {
-      // Logika Tambah
-      const newPublication = {
-        ...formState,
-        id: Date.now(), 
-        fileName: formState.file ? formState.file.name : 'Belum ada berkas',
-        // fileUrl sudah di-set di handleFileChange
+  // --- CRUD Actions ---
+  const handleSubmit = async () => {
+    try {
+      const payload = {
+        title: formState.title,
+        category: formState.subject,
+        published_at: format(formState.releaseDate, 'yyyy-MM-dd'),
+        status: formState.status,
+        description: '',
       };
-      setPublications([newPublication, ...publications]);
+
+      if (editingId) {
+        await dataApi.updatePublication(user.village_id, editingId, payload);
+        if (formState.file) {
+          await dataApi.replacePublicationFile(user.village_id, editingId, formState.file);
+        }
+      } else {
+        const createPayload = {
+          ...payload,
+          file: formState.file
+        };
+        await dataApi.uploadPublication(user.village_id, createPayload);
+      }
+      
+      loadData();
+      setIsDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to save", error);
+      alert("Gagal menyimpan data");
     }
-    // Jangan panggil handleCloseDialog di sini jika URL di-revoke
-    setIsDialogOpen(false);
-    setEditingId(null);
-    setFormState(defaultFormState);
   };
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     if (window.confirm('Apakah Anda yakin ingin menghapus publikasi ini?')) {
-      // Hapus item dan revoke URL jika ada
-      const pubToDelete = publications.find(p => p.id === id);
-      if (pubToDelete && pubToDelete.fileUrl && pubToDelete.fileUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(pubToDelete.fileUrl);
+      try {
+        await dataApi.deletePublication(user.village_id, id);
+        loadData();
+      } catch (error) {
+        console.error("Failed to delete", error);
+        alert("Gagal menghapus data");
       }
-      setPublications(publications.filter((pub) => pub.id !== id));
     }
   };
 
@@ -270,7 +269,13 @@ export default function PublikasiDesa() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPublications.length > 0 ? (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center text-slate-500">
+                    Memuat data...
+                  </TableCell>
+                </TableRow>
+              ) : filteredPublications.length > 0 ? (
                 filteredPublications.map((pub, index) => (
                 <TableRow key={pub.id} className="hover:bg-slate-50/50 transition-colors">
                   <TableCell className="text-slate-500">{index + 1}</TableCell>

@@ -1,8 +1,7 @@
-// src/pages/dashboard/PetaTematikAdmin.jsx
-import React, { useState, useEffect, useRef } from 'react';
+// src/pages/admin/PetaTematikAdmin.jsx
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import L from 'leaflet';
-import 'leaflet/dist/leaflet.css'; 
-import { useAuth } from '@/contexts/AuthContext'; 
+import 'leaflet/dist/leaflet.css';
 
 import { Button } from '@/components/ui/button';
 import { 
@@ -60,26 +59,10 @@ import {
   Edit, 
   Trash2,
   Info,
-  MapPin // Ikon MapPin
+  MapPin,
+  Loader2
 } from 'lucide-react';
-
-// --- MOCK DATA ---
-const MOCK_DESA_LIST = [
-  { id: '1', name: 'Desa Nonongan Selatan' },
-  { id: '2', name: 'Desa Rinding Batu' },
-  { id: '3', name: 'Desa Konoha' },
-];
-
-const MOCK_GEOSPATIAL = [
-  { id: 'geo001', desaId: '1', name: 'Batas Wilayah Nonongan', type: 'Polygon', source: 'data_desa_a.geojson' },
-  { id: 'geo002', desaId: '1', name: 'Titik Sekolah Nonongan', type: 'Point', source: 'data_sekolah.geojson' },
-  { id: 'geo003', desaId: '2', name: 'Sungai Rinding Batu', type: 'LineString', source: 'data_sungai.geojson' },
-];
-
-const MOCK_LAYERS = [
-  { id: 'layer01', desaId: '1', name: 'Kepadatan Penduduk', geoId: 'geo001', color: '#FF0000' },
-  { id: 'layer02', desaId: '1', name: 'Fasilitas Pendidikan', geoId: 'geo002', color: '#0000FF' },
-];
+import { dataApi } from '@/services/dataApi';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -93,30 +76,60 @@ export default function PetaTematikAdmin() {
   const mapRef = useRef(null); 
   const layerGroupRef = useRef(null); 
 
-  // --- PERUBAHAN: Ambil setActiveVillageId ---
-  const { activeVillageId, setActiveVillageId } = useAuth();
-  const selectedDesa = activeVillageId; 
-
-  const initialGeo = MOCK_GEOSPATIAL.filter(g => g.desaId === selectedDesa);
-  const initialLayers = MOCK_LAYERS.filter(l => l.desaId === selectedDesa);
-
-  const [geospatialData, setGeospatialData] = useState(initialGeo);
-  const [layerData, setLayerData] = useState(initialLayers);
+  const [selectedDesa, setSelectedDesa] = useState(null);
+  const [villages, setVillages] = useState([]);
+  const [geospatialData, setGeospatialData] = useState([]);
+  const [layerData, setLayerData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingGeo, setLoadingGeo] = useState(false);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null); 
   const [currentItem, setCurrentItem] = useState(null); 
 
-  // Efek: Update data lokal saat Global Filter berubah
+  // Load villages list
   useEffect(() => {
-    if (selectedDesa) {
-      setGeospatialData(MOCK_GEOSPATIAL.filter(g => g.desaId === selectedDesa));
-      setLayerData(MOCK_LAYERS.filter(l => l.desaId === selectedDesa));
-    } else {
+    const loadVillages = async () => {
+      try {
+        const response = await dataApi.listVillages({ per_page: 100, is_active: 'all' });
+        setVillages(response.items || []);
+      } catch (error) {
+        console.error('Gagal memuat desa:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadVillages();
+  }, []);
+
+  // Load geospatial and layer data when village is selected
+  const loadMapData = useCallback(async () => {
+    if (!selectedDesa) {
       setGeospatialData([]);
       setLayerData([]);
+      return;
+    }
+    
+    setLoadingGeo(true);
+    try {
+      const [geoData, mapData] = await Promise.all([
+        dataApi.listGeospatial(selectedDesa),
+        dataApi.listThematicMaps(selectedDesa)
+      ]);
+      setGeospatialData(geoData || []);
+      setLayerData(mapData || []);
+    } catch (error) {
+      console.error('Gagal memuat data peta:', error);
+      setGeospatialData([]);
+      setLayerData([]);
+    } finally {
+      setLoadingGeo(false);
     }
   }, [selectedDesa]);
+
+  useEffect(() => {
+    loadMapData();
+  }, [loadMapData]);
 
   // Inisialisasi Peta (Cleanup)
   useEffect(() => {
@@ -155,15 +168,20 @@ export default function PetaTematikAdmin() {
     layerGroupRef.current.clearLayers();
 
     const layerPromises = layerData.map(layer => {
-      const geoData = geospatialData.find(g => g.id === layer.geoId);
+      if (!layer.isVisible && layer.isVisible !== undefined) return Promise.resolve(null);
+      
+      const geoId = layer.geoId || layer.geospatial_id;
+      const geoData = geospatialData.find(g => g.id === parseInt(geoId) || g.id === geoId);
+      
       if (geoData) {
-        return fetch(`/${geoData.source}`) 
-          .then(res => res.ok ? res.json() : null)
-          .then(jsonData => {
-            if (!jsonData) return null;
-            return L.geoJSON(jsonData, {
+        // Real data: geoData.geojson_data or geoData.geometry
+        const jsonData = geoData.geojson_data || geoData.geometry;
+        
+        if (jsonData) {
+          try {
+            const geoJsonLayer = L.geoJSON(jsonData, {
               style: () => ({
-                color: layer.color,
+                color: layer.color || '#FF0000',
                 weight: 3,
                 opacity: 1,
                 fillOpacity: 0.3
@@ -171,7 +189,7 @@ export default function PetaTematikAdmin() {
               pointToLayer: (feature, latlng) => {
                 return L.circleMarker(latlng, {
                   radius: 6,
-                  fillColor: layer.color,
+                  fillColor: layer.color || '#FF0000',
                   color: "#000",
                   weight: 1,
                   opacity: 1,
@@ -179,11 +197,12 @@ export default function PetaTematikAdmin() {
                 });
               }
             });
-          })
-          .catch(err => {
+            return Promise.resolve(geoJsonLayer);
+          } catch (err) {
             console.error('Load layer failed:', err);
-            return null;
-          });
+            return Promise.resolve(null);
+          }
+        }
       }
       return Promise.resolve(null);
     });
@@ -203,28 +222,84 @@ export default function PetaTematikAdmin() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (type, id) => {
-    if (type === 'geo') setGeospatialData(geospatialData.filter(item => item.id !== id));
-    else setLayerData(layerData.filter(item => item.id !== id));
+  const handleDelete = async (type, id) => {
+    if (!selectedDesa) return;
+    
+    if (!confirm(`Apakah Anda yakin ingin menghapus ${type === 'geo' ? 'data geospatial' : 'layer'} ini?`)) {
+      return;
+    }
+
+    try {
+      if (type === 'geo') {
+        await dataApi.deleteGeospatial(selectedDesa, id);
+        setGeospatialData(geospatialData.filter(item => item.id !== id));
+      } else {
+        await dataApi.deleteThematicMap(selectedDesa, id);
+        setLayerData(layerData.filter(item => item.id !== id));
+      }
+    } catch (error) {
+      console.error('Gagal menghapus data:', error);
+      alert('Gagal menghapus data.');
+    }
   };
   
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
+    if (!selectedDesa) return;
+
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData.entries());
-    const newData = { ...data, desaId: selectedDesa };
 
-    if (modalType === 'addGeo') {
-      setGeospatialData([...geospatialData, { id: `geo${Date.now()}`, ...newData }]);
-    } else if (modalType === 'editGeo') {
-      setGeospatialData(geospatialData.map(item => item.id === currentItem.id ? { ...item, ...newData } : item));
-    } else if (modalType === 'addLayer') {
-      setLayerData([...layerData, { id: `layer${Date.now()}`, ...newData }]);
-    } else if (modalType === 'editLayer') {
-      setLayerData(layerData.map(item => item.id === currentItem.id ? { ...item, ...newData } : item));
+    try {
+      if (modalType === 'addGeo') {
+        const payload = {
+          name: data.name,
+          type: data.type,
+          geojson_data: data.geojson_data || null,
+        };
+        const created = await dataApi.createGeospatial(selectedDesa, payload);
+        setGeospatialData([...geospatialData, created]);
+      } else if (modalType === 'editGeo') {
+        const payload = {
+          name: data.name,
+          type: data.type,
+          geojson_data: data.geojson_data || null,
+        };
+        const updated = await dataApi.updateGeospatial(selectedDesa, currentItem.id, payload);
+        setGeospatialData(geospatialData.map(item => item.id === currentItem.id ? updated : item));
+      } else if (modalType === 'addLayer') {
+        const payload = {
+          name: data.name,
+          geospatial_id: parseInt(formGeoId || data.geoId),
+          color: data.color,
+          is_visible: true,
+        };
+        const created = await dataApi.createThematicMap(selectedDesa, payload);
+        setLayerData([...layerData, created]);
+      } else if (modalType === 'editLayer') {
+        const payload = {
+          name: data.name,
+          geospatial_id: parseInt(formGeoId || data.geoId),
+          color: data.color,
+        };
+        const updated = await dataApi.updateThematicMap(selectedDesa, currentItem.id, payload);
+        setLayerData(layerData.map(item => item.id === currentItem.id ? updated : item));
+      }
+      setIsModalOpen(false);
+      loadMapData(); // Refresh data
+    } catch (error) {
+      console.error('Gagal menyimpan data:', error);
+      alert('Gagal menyimpan data. Pastikan data sudah benar.');
     }
-    setIsModalOpen(false); 
   };
+
+  const [formGeoId, setFormGeoId] = useState('');
+
+  useEffect(() => {
+    if (isModalOpen && modalType?.includes('Layer')) {
+      setFormGeoId(currentItem?.geoId?.toString() || currentItem?.geospatial_id?.toString() || '');
+    }
+  }, [isModalOpen, modalType, currentItem]);
 
   const renderModalContent = () => {
     let title = '';
@@ -243,8 +318,9 @@ export default function PetaTematikAdmin() {
             <Input name="type" defaultValue={currentItem?.type} placeholder="Polygon, Point, Line" required />
           </div>
           <div className="space-y-2">
-            <Label>Sumber (File di /public)</Label>
-            <Input name="source" defaultValue={currentItem?.source} required />
+            <Label>GeoJSON Data (JSON string)</Label>
+            <Input name="geojson_data" defaultValue={currentItem?.geojson_data ? JSON.stringify(currentItem.geojson_data) : ''} placeholder='{"type":"FeatureCollection",...}' />
+            <p className="text-xs text-gray-500">Masukkan data GeoJSON sebagai string JSON</p>
           </div>
         </div>
       );
@@ -258,7 +334,23 @@ export default function PetaTematikAdmin() {
           </div>
           <div className="space-y-2">
             <Label>Data Geo ID</Label>
-            <Input name="geoId" defaultValue={currentItem?.geoId} placeholder="Pilih ID Geo" required />
+            <Select 
+              value={formGeoId} 
+              onValueChange={setFormGeoId}
+              required
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pilih Data Geospatial" />
+              </SelectTrigger>
+              <SelectContent>
+                {geospatialData.map((geo) => (
+                  <SelectItem key={geo.id} value={geo.id.toString()}>
+                    {geo.name} (ID: {geo.id})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input type="hidden" name="geoId" value={formGeoId} />
           </div>
           <div className="space-y-2">
             <Label>Warna (HEX)</Label>
@@ -282,7 +374,7 @@ export default function PetaTematikAdmin() {
     );
   };
 
-  const currentDesaName = MOCK_DESA_LIST.find(d => d.id === selectedDesa)?.name || 'Pilih Desa';
+  const currentDesaName = villages.find(d => String(d.id) === String(selectedDesa))?.name || 'Pilih Desa';
 
   return (
     <div className="space-y-6 w-full">
@@ -305,14 +397,15 @@ export default function PetaTematikAdmin() {
         <div className="w-full sm:w-auto min-w-[200px]">
           <Select 
             value={selectedDesa || ""} 
-            onValueChange={(val) => setActiveVillageId(val)} // Update Global Context
+            onValueChange={(val) => setSelectedDesa(val)}
+            disabled={loading}
           >
             <SelectTrigger className="w-full bg-white shadow-sm">
-              <SelectValue placeholder="Pilih Desa..." />
+              <SelectValue placeholder={loading ? "Memuat..." : "Pilih Desa..."} />
             </SelectTrigger>
             <SelectContent align="end">
-              {MOCK_DESA_LIST.map((desa) => (
-                <SelectItem key={desa.id} value={desa.id}>
+              {villages.map((desa) => (
+                <SelectItem key={desa.id} value={String(desa.id)}>
                   {desa.name}
                 </SelectItem>
               ))}
@@ -331,6 +424,11 @@ export default function PetaTematikAdmin() {
           <p className="text-slate-500 max-w-sm text-center mt-1">
             Silakan pilih desa pada menu dropdown di atas untuk mulai mengelola data peta.
           </p>
+        </div>
+      ) : loadingGeo ? (
+        <div className="flex flex-col items-center justify-center h-[50vh] bg-slate-50 rounded-xl border border-dashed">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-3" />
+          <p className="text-slate-500">Memuat data peta...</p>
         </div>
       ) : (
         <>
@@ -367,8 +465,10 @@ export default function PetaTematikAdmin() {
                       {geospatialData.length > 0 ? geospatialData.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell>{item.name}</TableCell>
-                          <TableCell>{item.type}</TableCell>
-                          <TableCell>{item.source}</TableCell>
+                          <TableCell>{item.type || '-'}</TableCell>
+                          <TableCell className="text-xs text-gray-500">
+                            {item.geojson_data ? 'GeoJSON tersedia' : '-'}
+                          </TableCell>
                           <TableCell>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -382,7 +482,7 @@ export default function PetaTematikAdmin() {
                           </TableCell>
                         </TableRow>
                       )) : (
-                        <TableRow><TableCell colSpan={4} className="text-center h-24 text-gray-500">Belum ada data.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={4} className="text-center h-24 text-gray-500">Belum ada data geospatial.</TableCell></TableRow>
                       )}
                     </TableBody>
                   </Table>
@@ -416,11 +516,11 @@ export default function PetaTematikAdmin() {
                       {layerData.length > 0 ? layerData.map((item) => (
                         <TableRow key={item.id}>
                           <TableCell>{item.name}</TableCell>
-                          <TableCell>{item.geoId}</TableCell>
+                          <TableCell>{item.geoId || item.geospatial_id || '-'}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <div className="h-4 w-4 rounded-full border" style={{ backgroundColor: item.color }} />
-                              {item.color}
+                              <div className="h-4 w-4 rounded-full border" style={{ backgroundColor: item.color || '#FF0000' }} />
+                              {item.color || '#FF0000'}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -436,7 +536,7 @@ export default function PetaTematikAdmin() {
                           </TableCell>
                         </TableRow>
                       )) : (
-                        <TableRow><TableCell colSpan={4} className="text-center h-24 text-gray-500">Belum ada layer.</TableCell></TableRow>
+                        <TableRow><TableCell colSpan={4} className="text-center h-24 text-gray-500">Belum ada layer peta.</TableCell></TableRow>
                       )}
                     </TableBody>
                   </Table>

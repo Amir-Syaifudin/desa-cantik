@@ -35,53 +35,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { XCircle } from 'lucide-react';
+import { dataApi } from '@/services/dataApi';
+import { apiClient } from '@/services/apiClient';
 
-const villages = [
-  'Nonongan Selatan',
-  'Rinding Batu',
-  'Konoha',
-  'Jatinegara',
-];
-
-const modules = [
-  {
-    id: 1,
-    name: 'Demografi',
-    description: 'Pendataan kondisi demografi.',
-    visibility: 'show',
-  },
-  {
-    id: 2,
-    name: 'Pendidikan',
-    description: 'Pendataan kondisi pendidikan.',
-    visibility: 'hide',
-  },
-  {
-    id: 3,
-    name: 'Ekonomi',
-    description: 'Pendataan kondisi ekonomi.',
-    visibility: 'show',
-  },
-  {
-    id: 4,
-    name: 'Kesehatan',
-    description: 'Pendataan kondisi kesehatan.',
-    visibility: 'show',
-  },
-  {
-    id: 5,
-    name: 'Pertanian',
-    description: 'Pendataan kondisi pertanian.',
-    visibility: 'show',
-  },
-];
-
-const StatusToggle = ({ value }) => (
+const StatusToggle = ({ value, onChange }) => (
   <div className="flex items-center gap-3">
     {['show', 'hide'].map((state) => (
       <button
         key={state}
         type="button"
+        onClick={() => onChange?.(state === 'show')}
         className={cn(
           'w-16 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold transition-all',
           state === value
@@ -96,7 +59,41 @@ const StatusToggle = ({ value }) => (
 );
 
 const ModulDesaAdmin = () => {
-  const [selectedVillage, setSelectedVillage] = React.useState(villages[0]);
+  const [villages, setVillages] = React.useState([]);
+  const [modules, setModules] = React.useState([]);
+  const [selectedVillage, setSelectedVillage] = React.useState('');
+
+  useEffect(() => {
+    const loadVillages = async () => {
+      try {
+        const response = await dataApi.listVillages({ per_page: 100, is_active: 'all' });
+        const items = response.items || [];
+        setVillages(items);
+        if (items.length > 0) {
+          setSelectedVillage(String(items[0].id));
+        }
+      } catch (error) {
+        console.error('Gagal memuat desa:', error);
+      }
+    };
+
+    loadVillages();
+  }, []);
+
+  useEffect(() => {
+    const loadModules = async () => {
+      if (!selectedVillage) return;
+      try {
+        const response = await apiClient.get(`/villages/${selectedVillage}/modules`);
+        setModules(response.data || []);
+      } catch (error) {
+        console.error('Gagal memuat modul desa:', error);
+        setModules([]);
+      }
+    };
+
+    loadModules();
+  }, [selectedVillage]);
 
   return (
     <div className="min-h-screen bg-slate-100 p-6">
@@ -109,8 +106,8 @@ const ModulDesaAdmin = () => {
             </SelectTrigger>
             <SelectContent>
               {villages.map((village) => (
-                <SelectItem key={village} value={village}>
-                  {village}
+                <SelectItem key={village.id} value={String(village.id)}>
+                  {village.name}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -122,7 +119,7 @@ const ModulDesaAdmin = () => {
             <div>
               <h3 className="text-2xl font-semibold text-slate-900">Edit Modul Desa</h3>
             </div>
-          <ModuleDialog mode="add" />
+          <ModuleDialog mode="add" selectedVillage={selectedVillage} />
           </div>
 
           <Card className="rounded-2xl border-slate-200 shadow-lg">
@@ -163,14 +160,27 @@ const ModulDesaAdmin = () => {
                         {module.id}
                       </TableCell>
                       <TableCell className="text-base font-semibold">
-                        {module.name}
+                        {module.module_name || module.name}
                       </TableCell>
                       <TableCell>{module.description}</TableCell>
                       <TableCell className="text-center">
-                        <ModuleDialog mode="edit" module={module} />
+                        <ModuleDialog mode="edit" module={module} selectedVillage={selectedVillage} />
                       </TableCell>
                       <TableCell className="text-center">
-                        <StatusToggle value={module.visibility} />
+                        <StatusToggle
+                          value={module.is_enabled || module.visibility ? 'show' : 'hide'}
+                          onChange={async (isEnabled) => {
+                            try {
+                              await apiClient.put(`/villages/${selectedVillage}/modules/${module.module_name || module.name}/toggle`, {
+                                is_enabled: isEnabled,
+                              });
+                              setModules((prev) => prev.map((m) => m.id === module.id ? { ...m, is_enabled: isEnabled } : m));
+                            } catch (error) {
+                              console.error('Gagal mengganti status modul:', error);
+                              alert('Gagal mengganti status modul.');
+                            }
+                          }}
+                        />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -192,12 +202,13 @@ const ModulDesaAdmin = () => {
 
 export default ModulDesaAdmin;
 
-const ModuleDialog = ({ mode, module }) => {
+const ModuleDialog = ({ mode, module, selectedVillage }) => {
   const [open, setOpen] = useState(false);
   const [formValues, setFormValues] = useState({
     name: module?.name || '',
     description: module?.description || '',
   });
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -215,10 +226,30 @@ const ModuleDialog = ({ mode, module }) => {
     setFormValues((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // TODO: integrate with API
-    setOpen(false);
+    try {
+      setSubmitting(true);
+      const payload = {
+        name: formValues.name,
+        description: formValues.description,
+      };
+
+      if (mode === 'add') {
+        await apiClient.post(`/villages/${selectedVillage}/modules`, payload);
+      } else if (module?.id || module?.module_name || module?.name) {
+        const moduleId = module.id || module.module_name || module.name;
+        await apiClient.put(`/villages/${selectedVillage}/modules/${moduleId}`, payload);
+      }
+
+      window.location.reload();
+    } catch (error) {
+      console.error('Gagal menyimpan modul:', error);
+      alert('Gagal menyimpan modul. Pastikan data sudah benar.');
+    } finally {
+      setSubmitting(false);
+      setOpen(false);
+    }
   };
 
   const trigger =
@@ -279,9 +310,10 @@ const ModuleDialog = ({ mode, module }) => {
             <Button
               type="submit"
               className="flex min-w-[120px] items-center justify-center gap-2 rounded-full bg-emerald-200 text-emerald-900 hover:bg-emerald-300"
+              disabled={submitting}
             >
               <Save className="h-4 w-4" />
-              Simpan
+              {submitting ? 'Menyimpan...' : 'Simpan'}
             </Button>
             <Button
               type="button"

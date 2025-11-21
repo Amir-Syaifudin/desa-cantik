@@ -16,6 +16,7 @@ import ModulDesaAdmin from '@/pages/admin/ModulDesaAdmin';
 import DaftarDesaAdmin from '@/pages/admin/DaftarDesaAdmin';
 import PerangkatDesaAdmin from '@/pages/admin/PerangkatDesaAdmin';
 import PublikasiDesaAdmin from '@/pages/admin/PublikasiDesaAdmin';
+import DataStatistikAdmin from '@/pages/admin/DataStatistikAdmin';
 
 // --- Impor Halaman Perangkat Desa ---
 import DashboardDesa from '@/pages/desa/DashboardDesa';
@@ -64,6 +65,7 @@ function AppRoutes() {
           <Route path="perangkat-desa" element={<PerangkatDesaAdmin pageName="Admin: Perangkat Desa" />} />
           <Route path="daftar-desa" element={<DaftarDesaAdmin pageName="Admin: Daftar Desa" />} />
           <Route path="modul-desa" element={<ModulDesaAdmin pageName="Admin: Modul Desa" />} />
+          <Route path="data-statistik" element={<DataStatistikAdmin />} />
           <Route path="publikasi" element={<PublikasiDesaAdmin pageName="Admin: Publikasi" />} />
           <Route path="peta-tematik" element={<PetaTematikAdmin />} />
           <Route path="ubah-password" element={<UbahPasswordAdminBPS />} />
