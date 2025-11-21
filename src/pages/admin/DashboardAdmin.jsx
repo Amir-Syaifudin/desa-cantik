@@ -196,7 +196,8 @@ export default function DashboardAdmin() {
               <CardContent>
                 <div className="text-2xl font-bold">{summary?.totalUsers || 0}</div>
                 <p className="text-xs text-muted-foreground">
-                  {summary?.activeUsers || 0} pengguna aktif
+                  {summary?.admin_count || 0} Admin BPS, {summary?.village_officer_count || 0}
+                Perangkat Desa
                 </p>
               </CardContent>
             </Card>
