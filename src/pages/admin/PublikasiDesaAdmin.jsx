@@ -52,22 +52,12 @@ import {
   Download,
   Search
 } from 'lucide-react';
-
-// --- MOCK DATA ---
-const MOCK_DESA_LIST = [
-  { id: 'desa_sukamaju', name: 'Desa Suka Maju' },
-  { id: 'desa_makmur', name: 'Desa Makmur Jaya' },
-  { id: 'desa_rantepao', name: 'Desa Rantepao (Toraja Utara)' },
-];
-
-const MOCK_PUBLICATIONS = [
-  { id: 'pub1', desaId: 'desa_sukamaju', title: 'Kecamatan Dalam Angka 2024', year: '2024', category: 'Laporan Statistik', file: 'kda_2024.pdf' },
-  { id: 'pub2', desaId: 'desa_sukamaju', title: 'Profil Desa Suka Maju 2023', year: '2023', category: 'Profil Desa', file: 'profil_2023.pdf' },
-  { id: 'pub3', desaId: 'desa_makmur', title: 'Statistik Pertanian 2024', year: '2024', category: 'Sektoral', file: 'tani_2024.pdf' },
-];
+import { dataApi } from '@/services/dataApi';
+import { publicationService } from '@/services/publicationService';
 
 export default function PublikasiDesaAdmin() {
   // State
+  const [villages, setVillages] = useState([]);
   const [selectedDesa, setSelectedDesa] = useState(null);
   const [publications, setPublications] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -77,15 +67,39 @@ export default function PublikasiDesaAdmin() {
   const [modalType, setModalType] = useState('add'); // 'add' or 'edit'
   const [currentItem, setCurrentItem] = useState(null);
 
-  // Efek: Filter data saat desa dipilih
+  // Load villages list
   useEffect(() => {
-    if (selectedDesa) {
-      // Simulasi fetch API berdasarkan desa
-      const filtered = MOCK_PUBLICATIONS.filter(p => p.desaId === selectedDesa);
-      setPublications(filtered);
-    } else {
-      setPublications([]);
-    }
+    const loadVillages = async () => {
+      try {
+        const response = await dataApi.listVillages({ per_page: 100, is_active: 'all' });
+        const items = response.items || [];
+        setVillages(items);
+      } catch (error) {
+        console.error('Gagal memuat desa:', error);
+      }
+    };
+
+    loadVillages();
+  }, []);
+
+  // Efek: ambil publikasi dari backend saat desa berubah
+  useEffect(() => {
+    const loadPublications = async () => {
+      if (!selectedDesa) {
+        setPublications([]);
+        return;
+      }
+      try {
+        const data = await publicationService.getPublications(selectedDesa, { per_page: 100 });
+        const list = Array.isArray(data) ? data : (data.data || []);
+        setPublications(list);
+      } catch (error) {
+        console.error('Gagal memuat publikasi desa:', error);
+        setPublications([]);
+      }
+    };
+
+    loadPublications();
   }, [selectedDesa]);
 
   // Handler CRUD
@@ -95,32 +109,50 @@ export default function PublikasiDesaAdmin() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id) => {
-    // TODO: Panggil API Delete
+  const handleDelete = async (id) => {
+    if (!selectedDesa) return;
     if (confirm('Apakah Anda yakin ingin menghapus publikasi ini?')) {
-      setPublications(publications.filter(p => p.id !== id));
+      try {
+        await publicationService.deletePublication(selectedDesa, id);
+        setPublications((prev) => prev.filter((p) => p.id !== id));
+      } catch (error) {
+        console.error('Gagal menghapus publikasi:', error);
+        alert('Gagal menghapus publikasi.');
+      }
     }
   };
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async(e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData.entries());
 
-    if (modalType === 'add') {
-      // TODO: Panggil API Create
-      const newPub = {
-        id: `pub${Date.now()}`,
-        desaId: selectedDesa,
-        ...data,
-        file: data.file.name // Simulasi nama file
-      };
-      setPublications([...publications, newPub]);
-    } else {
-      // TODO: Panggil API Update
-      setPublications(publications.map(p => 
-        p.id === currentItem.id ? { ...p, ...data, file: p.file } : p
-      ));
+    try {
+      if (!selectedDesa) return;
+
+      if (modalType === 'add') {
+        const formData = new FormData();
+        formData.append('title', data.title);
+        formData.append('category', data.category || 'Umum');
+        formData.append('published_at', `${data.year || new Date().getFullYear()}-01-01`);
+        if (data.file instanceof File) {
+          formData.append('file', data.file);
+        }
+
+        const created = await publicationService.createPublication(selectedDesa, formData);
+        const createdData = created.data || created;
+        setPublications([createdData, ...publications]);
+      } else if (currentItem?.id) {
+        await publicationService.updatePublication(selectedDesa, currentItem.id, {
+          title: data.title,
+          category: data.category,
+          published_at: `${data.year || new Date().getFullYear()}-01-01`,
+        });
+        setPublications((prev) => prev.map((p) => (p.id === currentItem.id ? { ...p, ...data } : p)));
+      }
+    } catch (error) {
+      console.error('Gagal menyimpan publikasi:', error);
+      alert('Gagal menyimpan publikasi.');
     }
     setIsModalOpen(false);
   };
@@ -150,8 +182,8 @@ export default function PublikasiDesaAdmin() {
               <SelectValue placeholder="Pilih desa..." />
             </SelectTrigger>
             <SelectContent>
-              {MOCK_DESA_LIST.map(desa => (
-                <SelectItem key={desa.id} value={desa.id}>
+              {villages.map(desa => (
+                <SelectItem key={desa.id} value={String(desa.id)}>
                   {desa.name}
                 </SelectItem>
               ))}
@@ -168,7 +200,7 @@ export default function PublikasiDesaAdmin() {
               <div>
                 <CardTitle>Daftar Publikasi</CardTitle>
                 <CardDescription>
-                  Dokumen yang diterbitkan untuk {MOCK_DESA_LIST.find(d => d.id === selectedDesa)?.name}.
+                  Dokumen yang diterbitkan untuk {villages.find(d => String(d.id) === String(selectedDesa))?.name || '-'}.
                 </CardDescription>
               </div>
               <Button onClick={() => handleOpenModal('add')}>
